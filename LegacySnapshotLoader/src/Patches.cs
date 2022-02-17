@@ -233,7 +233,8 @@ namespace LegacySnapshotLoader
                 bool isLegacy = blockID < ManMods.k_FIRST_MODDED_BLOCK_ID;
                 if (!isLegacy && !IsLegacyCache.TryGetValue(blockID, out isLegacy)) 
                 {
-                    IsLegacyCache.Put(blockID, IsLegacyID(blockID));
+                    isLegacy = IsLegacyID(blockID);
+                    IsLegacyCache.Put(blockID, isLegacy);
                 }
                 if (isLegacy)
                 {
