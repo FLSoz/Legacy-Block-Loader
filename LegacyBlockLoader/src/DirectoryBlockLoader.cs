@@ -38,7 +38,7 @@ namespace LegacyBlockLoader
                     }
                     catch (Exception E)
                     {
-                        Console.WriteLine("Could not access \"" + BlockPath + "\"!");
+                        BlockLoaderMod.logger.Error(E, "Could not access \"" + BlockPath + "\"!");
                         throw E;
                     }
                     m_CBDirectory = new DirectoryInfo(BlockPath);
@@ -100,7 +100,14 @@ namespace LegacyBlockLoader
                 FileInfo[] blocks = CBDirectory.GetFiles("*.json", SearchOption.AllDirectories);
                 foreach (FileInfo block in blocks)
                 {
-                    RegisterBlock(block);
+                    try
+                    {
+                        RegisterBlock(block);
+                    }
+                    catch (Exception e)
+                    {
+                        BlockLoaderMod.logger.Error("Failed to register block at path " + block.FullName + "\n" + e);
+                    }
                 }
 
                 // Resolve Assets
@@ -123,7 +130,7 @@ namespace LegacyBlockLoader
             foreach (Match file in referencedFiles)
             {
                 string fileName = file.Value.Substring(1).Trim().Replace("\"", "");
-                Console.WriteLine("Found file reference: " + fileName);
+                BlockLoaderMod.logger.Debug("Found file reference: " + fileName);
                 string actualFileName = Path.GetFileName(fileName);
                 if (!closestFiles.ContainsKey(actualFileName))
                 {
@@ -133,7 +140,7 @@ namespace LegacyBlockLoader
                         string closest = GetClosestPath(relativePath, paths);
                         closestFiles.Add(actualFileName, closest);
                         string[] fileNameTokens = actualFileName.Split('.');
-                        Console.WriteLine("Resolved to closest path: " + closest);
+                        BlockLoaderMod.logger.Debug("Resolved to closest path: " + closest);
 
                         // Update FileNameReplacements so we know which alias to refer to the filenames by
                         if (UsedPathNames.TryGetValue(actualFileName, out HashSet<string> usedNames))
@@ -222,8 +229,8 @@ namespace LegacyBlockLoader
         
         public static void ResolveAssets()
         {
-            ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("Legacy Block Loader");
-            LoaderMod.logger.Info("Loaded Mod Container");
+            ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
+            BlockLoaderMod.logger.Info("Loaded Mod Container");
 
             // Foreach asset, we get the actual value, and then rename it accordingly
             foreach (KeyValuePair<string, string> pair in FileNameReplacements)
@@ -242,7 +249,7 @@ namespace LegacyBlockLoader
                     Assets.Add(mesh);
                 }
             }
-            LoaderMod.logger.Info("Processed Assets");
+            BlockLoaderMod.logger.Info("Processed Assets");
 
             RegisterAssets(container);
 
@@ -257,6 +264,8 @@ namespace LegacyBlockLoader
             container.Contents.m_AdditionalAssets.AddRange(Assets);
         }
 
+        // Register assets so we can look them up later
+        // Still need to hook into injection since we're not modifying m_Blocks in ModContents
         public static void RegisterAssets(ModContainer container)
         {
             // Assert block id uniqueness:
@@ -271,7 +280,7 @@ namespace LegacyBlockLoader
                 }
                 blockID += (version > 0 ? "_" + version.ToString() : "");
                 pair.Value.blockDefinition.name = ModUtils.GetAssetFromCompoundId(blockID);
-                Console.WriteLine($"Reassigned block {pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) to unique ID {blockID}");
+                BlockLoaderMod.logger.Info($"Reassigned block {pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) to unique ID {blockID}");
                 definitionMap.Add(blockID, pair.Value);
             }
 
@@ -284,13 +293,14 @@ namespace LegacyBlockLoader
         }
 
         // this should get hooked to run right after ManMods.InjectModdedBlocks
+        // We need to update the Auto-Assigned IDs
         public static void InjectLegacyBlocks(
             ModSessionInfo newSessionInfo,
             Dictionary<int, Dictionary<int, Dictionary<BlockTypes, ModdedBlockDefinition>>> dictionary,
             Dictionary<int, Sprite> dictionary2
         )
         {
-            Console.WriteLine("[Nuterra] INJECTING LEGACY BLOCKS");
+            BlockLoaderMod.logger.Info("INJECTING LEGACY BLOCKS");
             List<string> blocksToAssign = new List<string>();
             Dictionary<string, UnofficialBlock> definitionMap = new Dictionary<string, UnofficialBlock>();
             List<int> portedIds = new List<int>();
@@ -298,7 +308,7 @@ namespace LegacyBlockLoader
             {
                 if (NuterraMod.TryGetSessionID(pair.Key, out int newId))
                 {
-                    Console.WriteLine($"{pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) has been ported to official as {newId}. Using official version.");
+                    BlockLoaderMod.logger.Warn($"{pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) has been ported to official as {newId}. Using official version.");
                     portedIds.Add(pair.Key);
                 }
                 else
@@ -306,7 +316,7 @@ namespace LegacyBlockLoader
                     string blockID = ModUtils.CreateCompoundId("LegacyBlockLoader", pair.Value.blockDefinition.name);
                     definitionMap.Add(blockID, pair.Value);
                     blocksToAssign.Add(blockID);
-                    Console.WriteLine($"Marking Block {pair.Value.blockDefinition.m_BlockDisplayName} [{blockID}] ({pair.Key}) for injection");
+                    BlockLoaderMod.logger.Debug($"Marking Block {pair.Value.blockDefinition.m_BlockDisplayName} [{blockID}] ({pair.Key}) for injection");
                 }
             }
             /* 
@@ -369,7 +379,7 @@ namespace LegacyBlockLoader
             Visible visible = physicalPrefab.GetComponent<Visible>();
             if (visible == null)
             {
-                Console.WriteLine("[Mods] Injected LEGACY block " + moddedBlockDefinition.name + " and performed first time setup.");
+                BlockLoaderMod.logger.Debug("Injected LEGACY block " + moddedBlockDefinition.name + " and performed first time setup.");
                 if (visible == null)
                 {
                     visible = physicalPrefab.gameObject.AddComponent<Visible>();
@@ -408,7 +418,7 @@ namespace LegacyBlockLoader
                     if (component4 != null)
                     {
                         meshRenderer.sharedMaterial = manMods.GetMaterial((int)corpIndex, component4.slot);
-                        d.Assert(meshRenderer.sharedMaterial != null, "[Mods] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
+                        d.Assert(meshRenderer.sharedMaterial != null, "[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
                     }
                 }
                 physicalPrefab.gameObject.name = moddedBlockDefinition.name;
@@ -419,14 +429,12 @@ namespace LegacyBlockLoader
                 {
                     componentsInChildren2[i].convex = true;
                 }
-                Console.WriteLine($"[Mods] Pooling block {moddedBlockDefinition.name}");
+                BlockLoaderMod.logger.Debug($"Pooling block {moddedBlockDefinition.name}");
                 component2.transform.CreatePool(8);
             }
             else
             {
-                Console.WriteLine("[Mods] LEGACY block " + moddedBlockDefinition.name + " has visible present??");
-                NuterraMod.TryRegisterIDMapping(legacyID, blockID);
-
+                BlockLoaderMod.logger.Debug("LEGACY block " + moddedBlockDefinition.name + " has visible present??");
                 physicalPrefab.gameObject.GetComponent<Visible>().m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
                 physicalPrefab.transform.CreatePool(8);
             }
@@ -464,7 +472,7 @@ namespace LegacyBlockLoader
             }
             dictionary3[moddedBlockDefinition.m_Grade - 1].Add((BlockTypes)blockID, moddedBlockDefinition);
             JSONBlockLoader.Inject(blockID, moddedBlockDefinition);
-            Console.WriteLine(string.Format("[Mods] Injected legacy block {0} at ID {1}", moddedBlockDefinition.name, blockID));
+            BlockLoaderMod.logger.Info("Injected legacy block {0} at ID {1}", moddedBlockDefinition.name, blockID);
         }
 
         private static readonly FieldInfo m_CurrentSession = typeof(ManMods).GetField("m_CurrentSession", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -477,7 +485,7 @@ namespace LegacyBlockLoader
             {
                 foreach (KeyValuePair<int, Dictionary<BlockTypes, ModdedBlockDefinition>> keyValuePair3 in keyValuePair2.Value)
                 {
-                    Console.WriteLine($"Adding extra modded blocks for Corp Index {keyValuePair2.Key}, Grade Index {keyValuePair3.Key}");
+                    BlockLoaderMod.logger.Info($"Adding extra modded blocks for Corp Index {keyValuePair2.Key}, Grade Index {keyValuePair3.Key}");
                     blockUnlockTable.AddModdedBlocks(keyValuePair2.Key, keyValuePair3.Key, keyValuePair3.Value);
                     if (manMods.IsModdedCorp((FactionSubTypes)keyValuePair2.Key))
                     {

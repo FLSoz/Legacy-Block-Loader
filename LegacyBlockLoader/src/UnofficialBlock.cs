@@ -51,11 +51,8 @@ namespace LegacyBlockLoader
             // so we'll strip them out ourselves;
             input = Regex.Replace(input, @"^\s*//.*$", "", RegexOptions.Multiline);  // removes line comments like this
             input = Regex.Replace(input, @"/\*(\s|\S)*?\*/", "", RegexOptions.Multiline); /* comments like this */
-            // Console.WriteLine(input);
             input = Regex.Replace(input, @"([,\[\{\]\}\." + Regex.Escape("\"") + @"0-9]|null)\s*//[^\n]*\n", "$1\n", RegexOptions.Multiline);    // Removes mixed JSON comments
-            // Console.WriteLine(input);
             input = Regex.Replace(input, @",\s*([\}\]])", "\n$1", RegexOptions.Multiline);  // remove trailing ,
-            // Console.WriteLine(input);
             return input.Replace("JSONBLOCK", "Deserializer");
         }
 
@@ -75,25 +72,23 @@ namespace LegacyBlockLoader
 
         public UnofficialBlock(string path)
         {
-            string raw = File.ReadAllText(path);
-
-
             string fileParsed;
             try
             {
+                string raw = File.ReadAllText(path);
                 JObject json = JObject.Parse(raw);
-                File.ReadAllText(path);
                 fileParsed = DirectoryBlockLoader.ResolveFiles(json.ToString(), path).Trim();
-                // Console.WriteLine(fileParsed);
+                // BlockLoaderMod.logger.Trace(fileParsed);
             }
             catch (Exception e)
             {
-                Console.WriteLine("FAILED to parse files: \n" + raw);
+                BlockLoaderMod.logger.Error(e, "FAILED to parse file " + path);
                 throw e;
             }
 
             try
             {
+                BlockLoaderMod.logger.Trace("Preparing to parse file:\n{file}", fileParsed);
                 this.jObject = JObject.Parse(fileParsed);
                 UnofficialBlockDefinition unofficialDef = this.jObject.ToObject<UnofficialBlockDefinition>(new JsonSerializer() { MissingMemberHandling = MissingMemberHandling.Ignore });
                 FactionSubTypes corpType = TryParseEnum<FactionSubTypes>(unofficialDef.Faction, FactionSubTypes.GSO);
@@ -101,7 +96,7 @@ namespace LegacyBlockLoader
                 {
                     corpType = FactionSubTypes.GSO;
                 }
-                Console.WriteLine($"[Nuterra] Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
+                BlockLoaderMod.logger.Info($"Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
 
                 this.ID = unofficialDef.ID;
                 if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
@@ -153,7 +148,7 @@ namespace LegacyBlockLoader
                 this.blockDefinition.m_Mass = unofficialDef.Mass;
                 this.blockDefinition.name = unofficialDef.Name;
 
-                Console.WriteLine($"[Nuterra] Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
+                BlockLoaderMod.logger.Info($"Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
 
                 GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
                 prefab.AddComponent<TankBlockTemplate>();
@@ -166,10 +161,9 @@ namespace LegacyBlockLoader
             }
             catch (Exception e)
             {
-                Console.WriteLine("[Nuterra] FAILED to read JSON: \n" + fileParsed);
+                BlockLoaderMod.logger.Error(e, "FAILED to read JSON");
                 throw e;
             }
-            // Console.WriteLine(fileParsed);
         }
         public UnofficialBlock(FileInfo file) : this(file.FullName) { }
 
