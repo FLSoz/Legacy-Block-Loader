@@ -26,7 +26,7 @@ namespace LegacySnapshotLoader
             {
                 layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${logger:shortName=true} | ${message}  ${exception}",
                 keepOldFiles = false,
-                minLevel = LogLevel.Trace
+                defaultMinLevel = LogLevel.Trace
             };
             Manager.RegisterLogger(logger, config);
         }

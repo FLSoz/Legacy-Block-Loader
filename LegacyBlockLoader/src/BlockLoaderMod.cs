@@ -26,21 +26,26 @@ namespace LegacyBlockLoader
             {
                 layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${logger:shortName=true} | ${message}  ${exception}",
                 keepOldFiles = false,
-                minLevel = LogLevel.Trace
+                defaultMinLevel = LogLevel.Trace
             };
             Manager.RegisterLogger(logger, config);
         }
 
         internal const string HarmonyID = "com.flsoz.ttmodding.legacyblockloader";
         private Harmony harmony = new Harmony(HarmonyID);
+        private bool Inited = false;
 
         public void ManagedEarlyInit()
         {
-            ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
-            PropertyInfo Local = typeof(ModContainer).GetProperty("Local", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            Local.SetValue(container, true);
-            DirectoryBlockLoader.LoadAssets();
-            ConfigureLogger();
+            if (!Inited)
+            {
+                ConfigureLogger();
+                ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
+                PropertyInfo Local = typeof(ModContainer).GetProperty("Local", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                Local.SetValue(container, true);
+                DirectoryBlockLoader.LoadAssets();
+                Inited = true;
+            }
         }
 
         public override void EarlyInit()

@@ -88,7 +88,7 @@ namespace LegacyBlockLoader
 
             try
             {
-                BlockLoaderMod.logger.Trace("Preparing to parse file:\n{file}", fileParsed);
+                BlockLoaderMod.logger.Trace($"Preparing to parse file:\n{fileParsed}");
                 this.jObject = JObject.Parse(fileParsed);
                 UnofficialBlockDefinition unofficialDef = this.jObject.ToObject<UnofficialBlockDefinition>(new JsonSerializer() { MissingMemberHandling = MissingMemberHandling.Ignore });
                 FactionSubTypes corpType = TryParseEnum<FactionSubTypes>(unofficialDef.Faction, FactionSubTypes.GSO);
@@ -151,9 +151,9 @@ namespace LegacyBlockLoader
                 BlockLoaderMod.logger.Info($"Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
 
                 GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
-                prefab.AddComponent<TankBlockTemplate>();
                 prefab.AddComponent<MeshFilter>();
                 prefab.AddComponent<MeshRenderer>();
+                prefab.AddComponent<TankBlockTemplate>();
                 prefab.AddComponent<BoxCollider>();
                 prefab.SetActive(false);
                 this.blockDefinition.m_PhysicalPrefab = prefab.GetComponent<TankBlockTemplate>();

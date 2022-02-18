@@ -434,7 +434,7 @@ namespace LegacyBlockLoader
             }
             else
             {
-                BlockLoaderMod.logger.Debug("LEGACY block " + moddedBlockDefinition.name + " has visible present??");
+                BlockLoaderMod.logger.Debug("LEGACY block " + moddedBlockDefinition.name + " has visible present - assuming already parsed, and component pool extant");
                 physicalPrefab.gameObject.GetComponent<Visible>().m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
                 physicalPrefab.transform.CreatePool(8);
             }

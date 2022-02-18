@@ -143,7 +143,9 @@ namespace LegacySnapshotLoader
 
         internal static LRUCache<int, bool> IsLegacyCache = new LRUCache<int, bool>(500);
         internal static LRUCache<int, int> LegacyLookupIDCache = new LRUCache<int, int>(1000);
-        internal static LRUCache<int, int> SessionIDCache = new LRUCache<int, int>(1000);
+
+        // cannot cache ID to ID for pure session IDs, because we have no guarantees on what the session ID of a single given block will be in a snapshot
+        internal static LRUCache<string, int> SessionIDCache = new LRUCache<string, int>(1000);
 
         private static FieldInfo m_CurrentSession = typeof(ManMods).GetField("m_CurrentSession", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
         private static MethodInfo TryGetSessionID = typeof(NuterraMod).GetMethod("TryGetSessionID", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -219,11 +221,13 @@ namespace LegacySnapshotLoader
             int newID;
             if (LegacyLookupIDCache.TryGetValue(blockID, out newID))
             {
+                SnapshotLoaderMod.logger.Trace("Returning cached session ID of {} for LEGACY block with name {}, saved block ID {}", newID, __instance.block, blockID);
                 __result = (BlockTypes)newID;
                 return false;
             }
-            else if (SessionIDCache.TryGetValue(blockID, out newID))
+            else if (SessionIDCache.TryGetValue(__instance.block, out newID))
             {
+                SnapshotLoaderMod.logger.Trace("Returning cached session ID of {} for OFFICIAL block with name {}, saved block ID {}", newID, __instance.block, blockID);
                 __result = (BlockTypes)newID;
                 return false;
             }
@@ -266,7 +270,7 @@ namespace LegacySnapshotLoader
                     }
                     else
                     {
-                        SessionIDCache.Put(blockID, testBlockID);
+                        SessionIDCache.Put(__instance.block, testBlockID);
                     }
                     return false;
                 }
@@ -302,7 +306,7 @@ namespace LegacySnapshotLoader
                         }
 
                         newID = InvalidID;
-                        SessionIDCache.Put(blockID, newID);
+                        SessionIDCache.Put(__instance.block, newID);
                     }
                     __result = (BlockTypes)newID;
                     return false;
