@@ -26,7 +26,7 @@ namespace LegacyBlockLoader
             {
                 layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${logger:shortName=true} | ${message}  ${exception}",
                 keepOldFiles = false,
-                defaultMinLevel = LogLevel.Trace
+                defaultMinLevel = LogLevel.Info
             };
             Manager.RegisterLogger(logger, config);
         }
