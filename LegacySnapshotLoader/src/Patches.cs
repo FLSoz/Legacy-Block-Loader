@@ -6,13 +6,14 @@ using System.Reflection;
 using LegacyBlockLoader.Datastructures;
 using HarmonyLib;
 using CustomModules;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 
 namespace LegacySnapshotLoader
 {
     [HarmonyPatch(typeof(TankPreset.BlockSpec), "GetBlockType")]
-    internal class PatchSnapshotCompatibility
+    internal class PatchSnapshotLoadCompatibility
     {
         internal static FieldInfo m_Mods = typeof(ManMods).GetField("m_Mods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         internal static FieldInfo m_BlockNames = typeof(ManMods).GetField("m_BlockNames", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -254,6 +255,17 @@ namespace LegacySnapshotLoader
                     {
                         // We know this is a legacy block, but no session ID has been found
                         SnapshotLoaderMod.logger.Warn($"Legacy block [{__instance.block} ({blockID})] NOT in session! Trying official as backup");
+                        if (SearchSortedRangeList(Claims, blockID, out int rangeStart))
+                        {
+                            if (ModCreators.TryGetValue(rangeStart, out string creator))
+                            {
+                                SnapshotLoaderMod.logger.Info($"Is a {creator} ID");
+                            }
+                            else
+                            {
+                                SnapshotLoaderMod.logger.Warn($"Is a modded ID from UNKNOWN author");
+                            }
+                        }
                     }
                 }
 
@@ -312,6 +324,116 @@ namespace LegacySnapshotLoader
                     return false;
                 }
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(TechData.SerializedSnapshotData), MethodType.Constructor, new Type[] { typeof(TechData) })]
+    public static class PatchSnapshotSaveCompatibility
+    {
+        internal static FieldInfo m_BoundsDoubleExtents = typeof(TechData).GetField("m_BoundsDoubleExtents", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        internal static FieldInfo m_CurrentSession = typeof(ManMods).GetField("m_CurrentSession", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        internal static FieldInfo m_AdditionalJsonData = typeof(TankPreset.BlockSpec).GetField("m_AdditionalJsonData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        internal static TankPreset.BlockSpec CopyBlockSpec(TankPreset.BlockSpec input)
+        {
+            TankPreset.BlockSpec output = new TankPreset.BlockSpec();
+            output.block = input.block;
+            output.m_BlockType = input.m_BlockType;
+            output.m_SkinID = input.m_SkinID;
+            output.m_VisibleID = input.m_VisibleID;
+            output.orthoRotation = input.orthoRotation;
+            output.position = input.position;
+            output.saveState = input.saveState;
+            output.textSerialData = input.textSerialData;
+
+            IDictionary<string, JToken> additionalData = (IDictionary<string, JToken>) m_AdditionalJsonData.GetValue(input);
+            if (additionalData != null)
+            {
+                m_AdditionalJsonData.SetValue(output, additionalData);
+            }
+
+            return output;
+        }
+
+
+        internal static List<TankPreset.BlockSpec> ConvertBlockSpecs(List<TankPreset.BlockSpec> inputList)
+        {
+            ModSessionInfo currentSession = (ModSessionInfo) m_CurrentSession.GetValue(Singleton.Manager<ManMods>.inst);
+            Dictionary<int, string> blockIDs = currentSession.BlockIDs;
+            List<TankPreset.BlockSpec> result = new List<TankPreset.BlockSpec>();
+            for (int i = 0; i < inputList.Count; i++)
+            {
+                TankPreset.BlockSpec currBlock = inputList[i];
+
+                int sessionID = (int)currBlock.GetBlockType();
+                if (sessionID >= ManMods.k_FIRST_MODDED_BLOCK_ID && blockIDs.TryGetValue(sessionID, out string blockID))
+                {
+                    // continue
+                    if (ModUtils.SplitCompoundId(blockID, out string modID, out string blockName))
+                    {
+                        if (modID == "LegacyBlockLoader")
+                        {
+                            if (NuterraMod.TryGetLegacyID(blockID, out int legacyID))
+                            {
+                                SnapshotLoaderMod.logger.Trace($"Setting BlockType of injected legacy block {blockID} back to legacy ID {legacyID}");
+                                TankPreset.BlockSpec copy = CopyBlockSpec(currBlock);
+                                copy.m_BlockType = (BlockTypes) legacyID;
+                                result.Add(copy);
+                            }
+                            else
+                            {
+                                SnapshotLoaderMod.logger.Error($"FAILED to find legacy ID of legacy block {blockID} ({sessionID})");
+                                result.Add(currBlock);
+                            }
+                        }
+                        else
+                        {
+                            SnapshotLoaderMod.logger.Trace($"Block {blockID} ({sessionID}) is not in mod LegacyBlockLoader");
+                            result.Add(currBlock);
+                        }
+                    }
+                    else
+                    {
+                        // wtf? Can't find mod name properly ... don't touch blockspec
+                        SnapshotLoaderMod.logger.Error($"FAILED to parse block ID {blockID} ({sessionID})");
+                        result.Add(currBlock);
+                    }
+                }
+                else
+                {
+                    // wtf? Block not in session? don't touch blockspec
+                    if (sessionID >= ManMods.k_FIRST_MODDED_BLOCK_ID)
+                    {
+                        SnapshotLoaderMod.logger.Error($"FAILED to find session info of block with block ID {sessionID}");
+                    }
+                    result.Add(currBlock);
+                }
+            }
+
+            return result;
+        }
+
+        [HarmonyPrefix]
+        public static void Prefix(ref TechData techData)
+        {
+            SnapshotLoaderMod.logger.Trace($"Patching saving of Tech {techData.Name}");
+            TechData replacement = new TechData() {
+                Name = techData.Name,
+                m_CreationData = techData.m_CreationData,
+                m_BlockSpecs = ConvertBlockSpecs(techData.m_BlockSpecs),
+                m_SkinMapping = techData.m_SkinMapping,
+                m_TechSaveState = techData.m_TechSaveState
+            };
+
+            IntVector3 boundsDoubleExtents = (IntVector3) m_BoundsDoubleExtents.GetValue(techData);
+            m_BoundsDoubleExtents.SetValue(replacement, boundsDoubleExtents);
+
+            bool[] killSwitchStates = techData.GetKillswitchStates();
+            replacement.SetKillswitchStates(killSwitchStates);
+
+            List<ControlScheme> controlSchemes = techData.GetControlSchemes();
+            replacement.SetControlSchemesFromSnapshot(controlSchemes);
+
+            techData = replacement;
         }
     }
 }

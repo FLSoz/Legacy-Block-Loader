@@ -65,9 +65,9 @@ namespace LegacySnapshotLoader
 
         public override void DeInit()
         {
-            PatchSnapshotCompatibility.LegacyLookupIDCache.Clear();
-            PatchSnapshotCompatibility.SessionIDCache.Clear();
-            PatchSnapshotCompatibility.InvalidID = 0;
+            PatchSnapshotLoadCompatibility.LegacyLookupIDCache.Clear();
+            PatchSnapshotLoadCompatibility.SessionIDCache.Clear();
+            PatchSnapshotLoadCompatibility.InvalidID = 0;
             harmony.UnpatchAll(HarmonyID);
         }
 
