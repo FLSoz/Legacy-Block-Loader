@@ -22,13 +22,13 @@ namespace LegacyBlockLoader
         internal static NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
         public static void ConfigureLogger()
         {
-            Manager.LogConfig config = new Manager.LogConfig
+            LogConfig config = new LogConfig
             {
                 layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${logger:shortName=true} | ${message}  ${exception}",
                 keepOldFiles = false,
                 defaultMinLevel = LogLevel.Info
             };
-            Manager.RegisterLogger(logger, config);
+            TTLogManager.RegisterLogger(logger, config);
         }
 
         internal const string HarmonyID = "com.flsoz.ttmodding.legacyblockloader";

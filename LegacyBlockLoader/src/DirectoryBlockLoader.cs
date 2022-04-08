@@ -360,6 +360,20 @@ namespace LegacyBlockLoader
             }
 
             // UpdateBlockUnlockTable(dictionary);
+            foreach (KeyValuePair<int, Dictionary<int, Dictionary<BlockTypes, ModdedBlockDefinition>>> keyValuePair2 in dictionary)
+            {
+                foreach (KeyValuePair<int, Dictionary<BlockTypes, ModdedBlockDefinition>> keyValuePair3 in keyValuePair2.Value)
+                {
+                    int grade = keyValuePair3.Key;
+                    if (grade < 0)
+                    {
+                        Dictionary<BlockTypes, ModdedBlockDefinition> invalidBlocks = keyValuePair3.Value;
+                        foreach (KeyValuePair<BlockTypes, ModdedBlockDefinition> invalidPair in invalidBlocks) {
+                            BlockLoaderMod.logger.Error($"INVALID bock detected: {invalidPair.Value.m_BlockDisplayName} [{invalidPair.Value.name}] ({invalidPair.Key}), Grade {grade}, Corp {invalidPair.Value.m_Corporation}");
+                        }
+                    }
+                }
+            }
         }
 
         #region Injection helpers
