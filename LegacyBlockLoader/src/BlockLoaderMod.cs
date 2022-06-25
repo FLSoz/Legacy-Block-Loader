@@ -14,8 +14,20 @@ namespace LegacyBlockLoader
     public class BlockLoaderMod : ModBase
     {
         public static int LoadOrder = 3;
+
         public static Type[] LoadAfter()
         {
+            IEnumerable<Assembly> communityPatchSearch = AppDomain.CurrentDomain.GetAssemblies().Where(a => a.ToString().StartsWith("CommunityPatch,"));
+            if (communityPatchSearch.Count() > 0)
+            {
+                Assembly communityPatch = communityPatchSearch.FirstOrDefault();
+                Type communityPatchMod = communityPatch.GetType("CommunityPatch.CommunityPatchMod", true);
+                return new Type[] { typeof(NuterraMod), communityPatchMod };
+            }
+            else
+            {
+                Console.WriteLine("[LegacyBlockLoader] Community Patch absent! F7 reloading will be broken because it's missing");
+            }
             return new Type[] { typeof(NuterraMod) };
         }
 

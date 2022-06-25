@@ -102,7 +102,19 @@ namespace LegacyBlockLoader
         }
     }
 
-    internal static class Patches
+    [HarmonyPatch(typeof(ManMods), "DoReparseAll")]
+    class ReparseJSONPatch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(ref ManMods __instance)
+        {
+            BlockLoaderMod.logger.Info("Patching NuterraMod metadata due to reparse");
+            NuterraMod.ClearMetadata();
+            NuterraMod.SetupMetadata();
+        }
+    }
+
+    internal static class LegacyPatches
     {
         internal static FieldInfo m_Mods = typeof(ManMods).GetField("m_Mods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         internal static FieldInfo m_BlockIDReverseLookup = typeof(ManMods).GetField("m_BlockIDReverseLookup", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);

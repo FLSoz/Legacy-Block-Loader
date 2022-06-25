@@ -62,10 +62,13 @@ namespace LegacySnapshotLoader
                 { 546300, 100 },
                 { 584000, 1000 },
                 { 620000, 1000 },
+                { 700000, 1000 },
                 { 800000, 1000 },
+                { 810000, 1000 },
                 { 910000, 2000 },
                 { 962000, 1000 },
                 { 980000, 1000 },
+                { 999000, 1000 },
                 { 1500000, 1000 },
                 { 1700000, 2000 },
                 { 2000000, 5000 },
@@ -78,16 +81,18 @@ namespace LegacySnapshotLoader
                 { 5000000, 1000 },
                 { 5349000, 1000 },
                 { 6666660, 140 },
+                { 10000000, 1000 },
                 { 11235000, 1000 },
                 { 12000000, 1000 },
                 { 20000000, 10000 },
                 { 60000000, 1000 },
                 { 69420000, 1000 },
                 { 91100000, 200000 },
+                { 92000000, 200 },
                 { 93000000, 1000 },
             };
         private static readonly Dictionary<int, string> ModCreators = new Dictionary<int, string> {
-                {6000, "QUACKDUCK" },
+                { 6000, "QUACKDUCK" },
                 { 7000, "EXUND" },
                 { 8000, "XEVIANLIGHT" },
                 { 10000, "FLSOZ" },
@@ -115,10 +120,13 @@ namespace LegacySnapshotLoader
                 { 546300, "RABIS" },
                 { 584000, "LEGIONITE (TAC?)" },
                 { 620000, "COMMANDERBUBBLES" },
+                { 700000, "ANCHOBI" },
                 { 800000, "GALREX" },
+                { 810000, "CUPHOLDER" },
                 { 910000, "RAFS (GT?)" },
                 { 962000, "SACHIHO" },
                 { 980000, "21TURTLES" },
+                { 999000, "DARVIN" },
                 { 1500000, "GWLEGION" },
                 { 1700000, "LICFLAGG (FSI?)" },
                 { 2000000, "SETH_SETH (Darklight?)" },
@@ -131,12 +139,14 @@ namespace LegacySnapshotLoader
                 { 5000000, "GARR8903" },
                 { 5349000, "HEX" },
                 { 6666660, "JANESPLAYZ" },
+                { 10000000, "PYROSALAMANDER" },
                 { 11235000, "KYOKO" },
                 { 12000000, "FIRERED" },
                 { 20000000, "LUKASXPL" },
                 { 60000000, "NEH" },
                 { 69420000, "TIDGEM" },
                 { 91100000, "NAAB007" },
+                { 92000000, "AUSEAWESOME" },
                 { 93000000, "XAM5021" },
             };
 
@@ -183,17 +193,17 @@ namespace LegacySnapshotLoader
 
         private static bool IsLegacyID(int id)
         {
-            SnapshotLoaderMod.logger.Info($"Checking if block {id} is a legacy ID");
+            SnapshotLoaderMod.logger.Debug($"Checking if block {id} is a legacy ID");
             if (SearchSortedArray(AcebaIDs, id))
             {
-                SnapshotLoaderMod.logger.Info($"Is a WP ID");
+                SnapshotLoaderMod.logger.Debug($"Is a WP ID");
                 return true;
             }
             else if (SearchSortedRangeList(Claims, id, out int rangeStart))
             {
                 if (ModCreators.TryGetValue(rangeStart, out string creator))
                 {
-                    SnapshotLoaderMod.logger.Info($"Is a {creator} ID");
+                    SnapshotLoaderMod.logger.Debug($"Is a {creator} ID");
                 }
                 else
                 {
@@ -201,14 +211,14 @@ namespace LegacySnapshotLoader
                 }
                 return true;
             }
-            // SnapshotLoaderMod.logger.Info($"NOT a modded ID");
+            // SnapshotLoaderMod.logger.Debug($"NOT a modded ID");
             return false;
         }
 
         [HarmonyPrefix]
         public static bool Prefix(TankPreset.BlockSpec __instance, ref BlockTypes __result)
         {
-            // SnapshotLoaderMod.logger.Info($"Checking if {__instance.block} ({(int) __instance.m_BlockType}) is a legacy block");
+            // SnapshotLoaderMod.logger.Debug($"Checking if {__instance.block} ({(int) __instance.m_BlockType}) is a legacy block");
             // TryGetSessionID(int legacyId, out int newId)
             int blockID = (int)__instance.m_BlockType;
 
@@ -259,7 +269,7 @@ namespace LegacySnapshotLoader
                         {
                             if (ModCreators.TryGetValue(rangeStart, out string creator))
                             {
-                                SnapshotLoaderMod.logger.Info($"Is a {creator} ID");
+                                SnapshotLoaderMod.logger.Debug($"Is a {creator} ID");
                             }
                             else
                             {
@@ -289,10 +299,12 @@ namespace LegacySnapshotLoader
                 else
                 {
                     // Does not exist
-                    SnapshotLoaderMod.logger.Error("FAILED to find session ID for block [{} ({})]", __instance.block, blockID);
+                    SnapshotLoaderMod.logger.Warn("FAILED to find session ID for block [{} ({})]", __instance.block, blockID);
                     if (isLegacy)
                     {
-                        if (blockID >= ManMods.k_FIRST_MODDED_BLOCK_ID)
+                        // If BlockInjector is present, assume block may have been loaded through there, don't touch it
+                        // Otherwise, there may be the case it's a legitimate official modded block that got removed. Set the ID to something invalid so no mistakes are made
+                        if (blockID >= ManMods.k_FIRST_MODDED_BLOCK_ID && !SnapshotLoaderMod.HasBlockInjector)
                         {
                             // Set invalid ID to 1 above highest
                             if (InvalidID == 0)
@@ -300,12 +312,21 @@ namespace LegacySnapshotLoader
                                 Dictionary<int, string> blockNames = (Dictionary<int, string>)m_BlockNames.GetValue(Singleton.Manager<ManMods>.inst);
                                 InvalidID = ManMods.k_FIRST_MODDED_BLOCK_ID + blockNames.Count() + 1;
                             }
-                            newID = InvalidID;
+                            if (blockID < InvalidID)
+                            {
+                                newID = InvalidID;
+                            }
+                            else
+                            {
+                                newID = blockID;
+                            }
                         }
                         else
                         {
                             newID = blockID;
                         }
+                        SnapshotLoaderMod.logger.Debug($"BlockInjector found: {SnapshotLoaderMod.HasBlockInjector}");
+                        SnapshotLoaderMod.logger.Debug($"Resolving {blockID} to ID {newID}");
                         LegacyLookupIDCache.Put(blockID, newID);
                     }
                     else
@@ -316,14 +337,31 @@ namespace LegacySnapshotLoader
                             Dictionary<int, string> blockNames = (Dictionary<int, string>)m_BlockNames.GetValue(Singleton.Manager<ManMods>.inst);
                             InvalidID = ManMods.k_FIRST_MODDED_BLOCK_ID + blockNames.Count() + 1;
                         }
-
-                        newID = InvalidID;
+                        if (blockID < InvalidID)
+                        {
+                            newID = InvalidID;
+                        }
+                        else
+                        {
+                            newID = blockID;
+                        }
+                        SnapshotLoaderMod.logger.Debug($"Invalid official block found, resolved to invalid ID: {newID}");
                         SessionIDCache.Put(__instance.block, newID);
                     }
                     __result = (BlockTypes)newID;
                     return false;
                 }
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(ManMods), "PurgeModdedContentFromGame")]
+    internal class PatchInvalidIDPerSession
+    {
+        [HarmonyPostfix]
+        internal static void Postfix()
+        {
+            PatchSnapshotLoadCompatibility.InvalidID = 0;
         }
     }
 
@@ -381,7 +419,7 @@ namespace LegacySnapshotLoader
                             }
                             else
                             {
-                                SnapshotLoaderMod.logger.Error($"FAILED to find legacy ID of legacy block {blockID} ({sessionID})");
+                                SnapshotLoaderMod.logger.Warn($"FAILED to find legacy ID of legacy block {blockID} ({sessionID})");
                                 result.Add(currBlock);
                             }
                         }

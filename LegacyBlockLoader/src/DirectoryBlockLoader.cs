@@ -292,6 +292,15 @@ namespace LegacyBlockLoader
             }
         }
 
+
+        internal static readonly MethodInfo AutoAssignIDs = typeof(ManMods)
+                .GetMethod(
+                    "AutoAssignIDs",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new Type[] { typeof(Dictionary<int, string>), typeof(List<string>), typeof(int), typeof(int) },
+                    null
+                );
         // this should get hooked to run right after ManMods.InjectModdedBlocks
         // We need to update the Auto-Assigned IDs
         public static void InjectLegacyBlocks(
@@ -327,14 +336,6 @@ namespace LegacyBlockLoader
             */
 
             // inject into IDs
-            MethodInfo AutoAssignIDs = typeof(ManMods)
-                .GetMethod(
-                    "AutoAssignIDs",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    new Type[] { typeof(Dictionary<int, string>), typeof(List<string>), typeof(int), typeof(int) },
-                    null
-                );
             AutoAssignIDs.Invoke(Singleton.Manager<ManMods>.inst,
                 new object[] { newSessionInfo.BlockIDs, blocksToAssign, ManMods.k_FIRST_MODDED_BLOCK_ID, int.MaxValue });
 
@@ -425,7 +426,15 @@ namespace LegacyBlockLoader
                 visible.m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
                 component3.m_DamageableType = moddedBlockDefinition.m_DamageableType;
                 moduleDamage.maxHealth = moddedBlockDefinition.m_MaxHealth;
-                moduleDamage.deathExplosion = manMods.m_DefaultBlockExplosion;
+                if (moduleDamage.deathExplosion == null)
+                {
+                    Console.WriteLine($"DEATH EXPLOSION OVERRIDEN FOR {moduleDamage.name} ({blockID})");
+                    moduleDamage.deathExplosion = manMods.m_DefaultBlockExplosion;
+                }
+                else
+                {
+                    Console.WriteLine($"DEATH EXPLOSION SAVED FOR {moduleDamage.name} ({blockID})");
+                }
                 foreach (MeshRenderer meshRenderer in physicalPrefab.GetComponentsInChildren<MeshRenderer>())
                 {
                     MeshRendererTemplate component4 = meshRenderer.GetComponent<MeshRendererTemplate>();

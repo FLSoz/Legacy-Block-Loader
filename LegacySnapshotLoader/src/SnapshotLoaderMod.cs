@@ -31,6 +31,7 @@ namespace LegacySnapshotLoader
             TTLogManager.RegisterLogger(logger, config);
         }
 
+        internal static bool HasBlockInjector = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("ModManager")).Count() > 0;
         internal static bool inited = false;
         internal const string HarmonyID = "com.flsoz.ttmodding.legacysnapshotloader";
         private Harmony harmony = new Harmony(HarmonyID);
