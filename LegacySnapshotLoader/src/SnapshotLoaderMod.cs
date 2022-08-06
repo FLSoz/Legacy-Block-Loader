@@ -5,9 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using CustomModules;
-using NLog;
 using HarmonyLib;
-using LogManager;
 
 namespace LegacySnapshotLoader
 {
@@ -19,16 +17,15 @@ namespace LegacySnapshotLoader
             return new Type[] { typeof(NuterraMod) };
         }
 
-        internal static NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
+        internal static Logger logger;
         public static void ConfigureLogger()
         {
-            LogConfig config = new LogConfig
+            Logger.TargetConfig config = new Logger.TargetConfig()
             {
-                layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${logger:shortName=true} | ${message}  ${exception}",
-                keepOldFiles = false,
-                defaultMinLevel = LogLevel.Info
+                layout = "${longdate} | ${level:uppercase=true:padding=-5:alignmentOnTruncation=left} | ${message}  ${exception}",
+                keepOldFiles = false
             };
-            TTLogManager.RegisterLogger(logger, config);
+            logger = new Logger("SnapshotLoaderMod", config, 4);
         }
 
         internal static bool HasBlockInjector = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("ModManager")).Count() > 0;
@@ -50,11 +47,11 @@ namespace LegacySnapshotLoader
         {
             if (AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("ModManager")).Count() > 0)
             {
-                logger.Warn("EARLY INIT was CALLED for {Class}, but 0ModManager is present!", this.GetType().Name);
+                logger.Warn($"EARLY INIT was CALLED for \"{this.GetType().Name}\", but 0ModManager is present!");
             }
             else
             {
-                logger.Warn("EARLY INIT was CALLED for {Class}, but 0ModManager is MISSING!", this.GetType().Name);
+                logger.Warn($"EARLY INIT was CALLED for \"{this.GetType().Name}\", but 0ModManager is MISSING!");
                 this.ManagedEarlyInit();
             }
         }

@@ -232,19 +232,19 @@ namespace LegacySnapshotLoader
             int newID;
             if (LegacyLookupIDCache.TryGetValue(blockID, out newID))
             {
-                SnapshotLoaderMod.logger.Trace("Returning cached session ID of {} for LEGACY block with name {}, saved block ID {}", newID, __instance.block, blockID);
+                SnapshotLoaderMod.logger.Trace($"Returning cached session ID of {newID} for LEGACY block with name {__instance.block}, saved block ID {blockID}");
                 __result = (BlockTypes)newID;
                 return false;
             }
             else if (SessionIDCache.TryGetValue(__instance.block, out newID))
             {
-                SnapshotLoaderMod.logger.Trace("Returning cached session ID of {} for OFFICIAL block with name {}, saved block ID {}", newID, __instance.block, blockID);
+                SnapshotLoaderMod.logger.Trace($"Returning cached session ID of {newID} for OFFICIAL block with name {__instance.block}, saved block ID {blockID}");
                 __result = (BlockTypes)newID;
                 return false;
             }
             else
             {
-                SnapshotLoaderMod.logger.Trace("Trying to load block with name {}", __instance.block);
+                SnapshotLoaderMod.logger.Trace($"Trying to load block with name {__instance.block}");
                 bool isLegacy = blockID < ManMods.k_FIRST_MODDED_BLOCK_ID;
                 if (!isLegacy && !IsLegacyCache.TryGetValue(blockID, out isLegacy)) 
                 {
@@ -284,7 +284,7 @@ namespace LegacySnapshotLoader
                 // It should exist
                 if (testBlockID > 3)
                 {
-                    SnapshotLoaderMod.logger.Debug("Found session ID {} for block [{} ({})]", testBlockID, __instance.block, blockID);
+                    SnapshotLoaderMod.logger.Debug($"Found session ID {testBlockID} for block [{__instance.block} ({blockID})]");
                     __result = (BlockTypes)testBlockID;
                     if (isLegacy)
                     {
@@ -299,7 +299,7 @@ namespace LegacySnapshotLoader
                 else
                 {
                     // Does not exist
-                    SnapshotLoaderMod.logger.Warn("FAILED to find session ID for block [{} ({})]", __instance.block, blockID);
+                    SnapshotLoaderMod.logger.Warn($"FAILED to find session ID for block [{__instance.block} ({blockID})]");
                     if (isLegacy)
                     {
                         // If BlockInjector is present, assume block may have been loaded through there, don't touch it

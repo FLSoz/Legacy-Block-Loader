@@ -15,9 +15,9 @@ namespace LegacyBlockLoader
 {
     public class UnofficialBlock
     {
-        public ModdedBlockDefinition blockDefinition;
-        public JObject jObject;
-        public int ID;
+        public readonly ModdedBlockDefinition blockDefinition;
+        public readonly JObject jObject;
+        public readonly int ID;
 
         private interface EnumParser {
             object ParseEnum(int val, object defaultValue);
@@ -170,7 +170,14 @@ namespace LegacyBlockLoader
         public void WrapJSON()
         {
             JObject wrappedJSON = new JObject();
-            this.jObject.Add("AutoImported", true);
+            try
+            {
+                this.jObject.Add("AutoImported", true);
+            }
+            catch (ArgumentException)
+            {
+                // this is fine - means AutoImported is already set
+            }
             wrappedJSON.Add("NuterraBlock", this.jObject);
             this.blockDefinition.m_Json = new UnityEngine.TextAsset(wrappedJSON.ToString());
         }
