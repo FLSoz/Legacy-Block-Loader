@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
@@ -49,27 +50,103 @@ namespace LegacyBlockLoader
         internal static readonly Assembly ModManager = AppDomain.CurrentDomain.GetAssemblies()
             .Where(assembly => assembly.GetName().Name == "TTModManager").First();
         internal static readonly Type ModManagerType = ModManager.GetType("ModManager.ModManager", true);
-        internal static readonly Type ModdedContentLoaderType = ModManager.GetType("ModManager.ModdedContentLoader", true);
+        internal static readonly Type ModdedContentLoaderType = ModManager.GetType("ModManager.ModdedContentLoader", false);
         internal static readonly FieldInfo CurrentOperationSpecifics = AccessTools.Field(ModManagerType, "CurrentOperationSpecifics");
-        internal static MethodInfo InjectLegacyBlocks = AccessTools.Method(ModdedContentLoaderType, "InjectLegacyBlocks");
+        internal static MethodInfo InjectLegacyBlocksIterator = ModdedContentLoaderType != null ? AccessTools.Method(ModdedContentLoaderType, "InjectLegacyBlocksIterator") : null;
+
+
+        internal static readonly string TTSteamDir = Path.GetFullPath(Path.Combine(
+            AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => assembly.GetName().Name == "Assembly-CSharp").First().Location
+            .Replace("Assembly-CSharp.dll", ""), @"../../"
+        ));
+        private static DirectoryInfo m_CBDirectory;
+        internal static DirectoryInfo CBDirectory
+        {
+            get
+            {
+                if (m_CBDirectory == null)
+                {
+                    string BlockPath = Path.Combine(TTSteamDir, "Custom Blocks");
+                    try
+                    {
+                        if (!Directory.Exists(BlockPath))
+                        {
+                            Directory.CreateDirectory(BlockPath);
+                            // Add Block Example.json here?
+                        }
+                    }
+                    catch (Exception E)
+                    {
+                        BlockLoaderMod.logger.Error(E, "Could not access \"" + BlockPath + "\"!");
+                        throw E;
+                    }
+                    m_CBDirectory = new DirectoryInfo(BlockPath);
+                }
+                return m_CBDirectory;
+            }
+        }
+
+        internal static ModContainer ThisContainer;
 
         // This satisfies the 0ModManager interface for loading across multiple frames
         public IEnumerator<float> EarlyInitIterator()
         {
             if (!Inited)
             {
-                ConfigureLogger();
-                ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
-                PropertyInfo Local = typeof(ModContainer).GetProperty("Local", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                Local.SetValue(container, true);
-
-                IEnumerator<float> setupIterator = DirectoryBlockLoader.LoadAssets();
-                while (setupIterator.MoveNext())
-                {
-                    yield return setupIterator.Current;
-                }
                 Inited = true;
+                ConfigureLogger();
+                ThisContainer = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
+                BlockLoaderMod.logger.Info("Loaded Mod Container");
+                PropertyInfo Local = typeof(ModContainer).GetProperty("Local", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                Local.SetValue(ThisContainer, true);
+
+                var holder = new GameObject();
+                holder.AddComponent<AssetLoaderCoroutine>();
+                GameObject.DontDestroyOnLoad(holder);
+
+                IEnumerator<float> assetSetupIterator = DirectoryAssetLoader.LoadAssets();
+                while (assetSetupIterator.MoveNext())
+                {
+                    yield return assetSetupIterator.Current;
+                }
+
+                // Load blocks
+                FileInfo[] blocks = BlockLoaderMod.CBDirectory.GetFiles("*.json", SearchOption.AllDirectories);
+                int processed = 0;
+                int total = blocks.Length;
+                foreach (FileInfo block in blocks)
+                {
+                    try
+                    {
+                        DirectoryBlockLoader.RegisterBlock(block);
+                        DirectoryAssetLoader.FileChanged[block.FullName] = block.LastWriteTime;
+                    }
+                    catch (Exception e)
+                    {
+                        BlockLoaderMod.logger.Error("Failed to register block at path " + block.FullName + "\n" + e);
+                    }
+                    processed++;
+                    yield return ((float)processed) / total;
+                }
+
+                IEnumerator<float> blockSetupIterator = DirectoryBlockLoader.RegisterBlockDefs(ThisContainer);
+                while (blockSetupIterator.MoveNext())
+                {
+                    yield return blockSetupIterator.Current;
+                }
+
+                // Resolve Assets
+                IEnumerator<float> assetsIterator = DirectoryAssetLoader.ResolveAssets();
+                while (assetsIterator.MoveNext())
+                {
+                    yield return assetsIterator.Current;
+                }
+
+                // Add all assets into the ModContainer
+                ThisContainer.Contents.m_AdditionalAssets.AddRange(DirectoryAssetLoader.Assets);
             }
+            yield break;
         }
 
         public override void EarlyInit()
@@ -77,6 +154,8 @@ namespace LegacyBlockLoader
             if (AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("ModManager")).Count() > 0)
             {
                 logger.Warn($"EARLY INIT was CALLED for {this.GetType().Name}, but 0ModManager is present!");
+                IEnumerator<float> earlyInit = EarlyInitIterator();
+                while (earlyInit.MoveNext()) { }
             }
             else
             {
@@ -99,7 +178,10 @@ namespace LegacyBlockLoader
         public override void Init()
         {
             harmony.PatchAll();
-            harmony.Patch(InjectLegacyBlocks, prefix: new HarmonyMethod(AccessTools.Method(typeof(BlockLoaderMod), nameof(BlockLoaderMod.InjectLegacyBlocksPrefix))));
+            if (InjectLegacyBlocksIterator != null)
+            {
+                harmony.Patch(InjectLegacyBlocksIterator, prefix: new HarmonyMethod(AccessTools.Method(typeof(BlockLoaderMod), nameof(BlockLoaderMod.InjectLegacyBlocksPrefix))));
+            }
         }
 
         internal static bool InjectLegacyBlocksPrefix(

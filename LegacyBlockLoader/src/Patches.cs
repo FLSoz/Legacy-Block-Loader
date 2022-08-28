@@ -11,6 +11,33 @@ using CustomModules.LegacyModule;
 
 namespace LegacyBlockLoader
 {
+    // patch recycle to always succeed
+    [HarmonyPatch(typeof(ComponentPool), "ReturnItemToPool")]
+    internal class PatchRecycle
+    {
+        internal static Type ItemToReturnToPool;
+        internal static FieldInfo m_Poolable;
+
+        [HarmonyFinalizer]
+        internal static Exception Finalizer(Exception __exception, System.Object itemToReturn)
+        {
+            if (ItemToReturnToPool == null)
+            {
+                ItemToReturnToPool = itemToReturn.GetType();
+                m_Poolable = AccessTools.Field(ItemToReturnToPool, "m_Poolable");
+            }
+            ComponentPool.Pool.Poolable poolable = (ComponentPool.Pool.Poolable) m_Poolable.GetValue(itemToReturn);
+            if (poolable.component is Transform transform)
+            {
+                TankBlock block = transform.GetComponent<TankBlock>();
+                if (block != null)
+                {
+                    return null;
+                }
+            }
+            return __exception;
+        }
+    }
 
     [HarmonyPatch(typeof(ManMods), "InjectModdedBlocks")]
     internal class PatchBlockInjection

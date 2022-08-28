@@ -16,8 +16,10 @@ namespace LegacyBlockLoader
     public class UnofficialBlock
     {
         public readonly ModdedBlockDefinition blockDefinition;
-        public readonly JObject jObject;
+        public JObject jObject;
         public readonly int ID;
+        internal readonly string path;
+        internal readonly HashSet<string> usedAssetNames = new HashSet<string>();
 
         private interface EnumParser {
             object ParseEnum(int val, object defaultValue);
@@ -45,7 +47,7 @@ namespace LegacyBlockLoader
         }
         private static Dictionary<Type, EnumParser> EnumDict = new Dictionary<Type, UnofficialBlock.EnumParser>();
 
-        internal static string Format(string input)
+        private static string Format(string input)
         {
             // JavaScriptSerializer doesn't accept commented-out JSON,
             // so we'll strip them out ourselves;
@@ -70,94 +72,19 @@ namespace LegacyBlockLoader
             }
         }
 
-        public UnofficialBlock(string path)
+        public UnofficialBlock(string filePath)
         {
-            string fileParsed;
+            this.path = filePath;
+            string fileParsed = ParseJSON();
             try
             {
-                string raw = File.ReadAllText(path);
-                JObject json = JObject.Parse(raw);
-                fileParsed = DirectoryBlockLoader.ResolveFiles(json.ToString(), path).Trim();
-                // BlockLoaderMod.logger.Trace(fileParsed);
-            }
-            catch (Exception e)
-            {
-                BlockLoaderMod.logger.Error(e, "FAILED to parse file " + path);
-                throw e;
-            }
-
-            try
-            {
-                BlockLoaderMod.logger.Trace($"Preparing to parse file:\n{fileParsed}");
-                this.jObject = JObject.Parse(fileParsed);
-                UnofficialBlockDefinition unofficialDef = this.jObject.ToObject<UnofficialBlockDefinition>(new JsonSerializer() { MissingMemberHandling = MissingMemberHandling.Ignore });
-                FactionSubTypes corpType = TryParseEnum<FactionSubTypes>(unofficialDef.Faction, FactionSubTypes.GSO);
-                if (corpType == FactionSubTypes.NULL)
-                {
-                    corpType = FactionSubTypes.GSO;
-                }
-                BlockLoaderMod.logger.Info($"Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
-
-                this.ID = unofficialDef.ID;
-                if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
-                {
-                    unofficialDef.Name = ID.ToString();
-                }
-                unofficialDef.Grade++;  // Add 1 to Grade, b/c Legacy grade is 0-indexed, official blocks are 1-indexed
-
-                this.jObject = JObject.Parse(fileParsed);
-                JProperty Grade = jObject.Property("Grade");
-                if (Grade != null)
-                {
-                    Grade.Value = unofficialDef.Grade;
-                }
-                else
-                {
-                    jObject.Add("Grade", unofficialDef.Grade);
-                }
-
-                JProperty Category = jObject.Property("Category");
-                BlockCategories blockCategory = TryParseEnum<BlockCategories>(unofficialDef.Category, BlockCategories.Standard);
-                if (blockCategory == BlockCategories.Null)
-                {
-                    blockCategory = BlockCategories.Standard;
-                }
-                if (Category != null)
-                {
-                    Category.Value = blockCategory.ToString();
-                }
-
-                JProperty Rarity = jObject.Property("Rarity");
-                BlockRarity blockRarity = TryParseEnum<BlockRarity>(unofficialDef.Rarity, BlockRarity.Common);
-                if (Rarity != null)
-                {
-                    Rarity.Value = blockRarity.ToString();
-                }
-
                 this.blockDefinition = ScriptableObject.CreateInstance<ModdedBlockDefinition>();
-                this.blockDefinition.m_BlockIdentifier = this.ID.ToString();
-                this.blockDefinition.m_BlockDisplayName = unofficialDef.Name;
-                this.blockDefinition.m_BlockDescription = unofficialDef.Description;
-                this.blockDefinition.m_Corporation = corpType.ToString();
-                this.blockDefinition.m_Category = blockCategory;
-                this.blockDefinition.m_Rarity = blockRarity;
-                this.blockDefinition.m_Grade = unofficialDef.Grade;
-                this.blockDefinition.m_Price = unofficialDef.Price;
-                this.blockDefinition.m_UnlockWithLicense = true;
-                this.blockDefinition.m_DamageableType = TryParseEnum<ManDamage.DamageableType>(unofficialDef.DamageableType, ManDamage.DamageableType.Standard);
-                this.blockDefinition.m_Mass = unofficialDef.Mass;
-                this.blockDefinition.name = unofficialDef.Name;
-
-                BlockLoaderMod.logger.Info($"Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
-
-                GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
-                prefab.AddComponent<MeshFilter>();
-                prefab.AddComponent<MeshRenderer>();
-                prefab.AddComponent<TankBlockTemplate>();
-                prefab.AddComponent<BoxCollider>();
-                prefab.SetActive(false);
-                this.blockDefinition.m_PhysicalPrefab = prefab.GetComponent<TankBlockTemplate>();
-                this.WrapJSON();
+                
+                BlockLoaderMod.logger.Trace($"Preparing to parse file:\n{fileParsed}");
+                UnofficialBlockDefinition unofficialDef = this.jObject.ToObject<UnofficialBlockDefinition>(new JsonSerializer() { MissingMemberHandling = MissingMemberHandling.Ignore });
+                
+                this.ID = unofficialDef.ID;
+                this.Setup(unofficialDef);
             }
             catch (Exception e)
             {
@@ -165,9 +92,102 @@ namespace LegacyBlockLoader
                 throw e;
             }
         }
+
+        internal string ParseJSON()
+        {
+            string fileParsed;
+            try
+            {
+                string raw = File.ReadAllText(path);
+                JObject json = JObject.Parse(raw);
+                fileParsed = DirectoryBlockLoader.ResolveUsedAssetFilenames(json.ToString(), path, out HashSet<string> usedFileNames).Trim();
+                // BlockLoaderMod.logger.Trace(fileParsed);
+                usedAssetNames.Clear();
+                foreach (string fileName in usedFileNames)
+                {
+                    usedAssetNames.Add(fileName);
+                }
+                this.jObject = JObject.Parse(fileParsed);
+                return fileParsed;
+            }
+            catch (Exception e)
+            {
+                BlockLoaderMod.logger.Error(e, "FAILED to parse file " + path);
+                throw e;
+            }
+        }
+
+        private void Setup(UnofficialBlockDefinition unofficialDef)
+        {
+            FactionSubTypes corpType = TryParseEnum<FactionSubTypes>(unofficialDef.Faction, FactionSubTypes.GSO);
+            if (corpType == FactionSubTypes.NULL)
+            {
+                corpType = FactionSubTypes.GSO;
+            }
+            BlockLoaderMod.logger.Info($"Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
+
+            if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
+            {
+                unofficialDef.Name = ID.ToString();
+            }
+            unofficialDef.Grade++;  // Add 1 to Grade, b/c Legacy grade is 0-indexed, official blocks are 1-indexed
+
+            JProperty Grade = jObject.Property("Grade");
+            if (Grade != null)
+            {
+                Grade.Value = unofficialDef.Grade;
+            }
+            else
+            {
+                jObject.Add("Grade", unofficialDef.Grade);
+            }
+
+            JProperty Category = jObject.Property("Category");
+            BlockCategories blockCategory = TryParseEnum<BlockCategories>(unofficialDef.Category, BlockCategories.Standard);
+            if (blockCategory == BlockCategories.Null)
+            {
+                blockCategory = BlockCategories.Standard;
+            }
+            if (Category != null)
+            {
+                Category.Value = blockCategory.ToString();
+            }
+
+            JProperty Rarity = jObject.Property("Rarity");
+            BlockRarity blockRarity = TryParseEnum<BlockRarity>(unofficialDef.Rarity, BlockRarity.Common);
+            if (Rarity != null)
+            {
+                Rarity.Value = blockRarity.ToString();
+            }
+
+            this.blockDefinition.m_BlockIdentifier = this.ID.ToString();
+            this.blockDefinition.m_BlockDisplayName = unofficialDef.Name;
+            this.blockDefinition.m_BlockDescription = unofficialDef.Description;
+            this.blockDefinition.m_Corporation = corpType.ToString();
+            this.blockDefinition.m_Category = blockCategory;
+            this.blockDefinition.m_Rarity = blockRarity;
+            this.blockDefinition.m_Grade = unofficialDef.Grade;
+            this.blockDefinition.m_Price = unofficialDef.Price;
+            this.blockDefinition.m_UnlockWithLicense = true;
+            this.blockDefinition.m_DamageableType = TryParseEnum<ManDamage.DamageableType>(unofficialDef.DamageableType, ManDamage.DamageableType.Standard);
+            this.blockDefinition.m_Mass = unofficialDef.Mass;
+            this.blockDefinition.name = unofficialDef.Name;
+
+            BlockLoaderMod.logger.Info($"Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
+
+            GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
+            prefab.AddComponent<MeshFilter>();
+            prefab.AddComponent<MeshRenderer>();
+            prefab.AddComponent<TankBlockTemplate>();
+            prefab.AddComponent<BoxCollider>();
+            prefab.SetActive(false);
+            this.blockDefinition.m_PhysicalPrefab = prefab.GetComponent<TankBlockTemplate>();
+            this.WrapJSON();
+        }
+
         public UnofficialBlock(FileInfo file) : this(file.FullName) { }
 
-        public void WrapJSON()
+        internal void WrapJSON()
         {
             JObject wrappedJSON = new JObject();
             try

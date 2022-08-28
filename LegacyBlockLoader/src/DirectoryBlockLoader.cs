@@ -16,140 +16,24 @@ namespace LegacyBlockLoader
 {
     public static class DirectoryBlockLoader
     {
-        private static Dictionary<string, DateTime> FileChanged = new Dictionary<string, DateTime>();
-        private const long WatchDogTimeBreaker = 3000;
-        internal static readonly string TTSteamDir = Path.GetFullPath(Path.Combine(
-            AppDomain.CurrentDomain.GetAssemblies()
-            .Where(assembly => assembly.GetName().Name == "Assembly-CSharp").First().Location
-            .Replace("Assembly-CSharp.dll", ""), @"../../"
-        ));
-        private static DirectoryInfo m_CBDirectory;
-        internal static DirectoryInfo CBDirectory
-        {
-            get
-            {
-                if (m_CBDirectory == null)
-                {
-                    string BlockPath = Path.Combine(TTSteamDir, "Custom Blocks");
-                    try
-                    {
-                        if (!Directory.Exists(BlockPath))
-                        {
-                            Directory.CreateDirectory(BlockPath);
-                            // Add Block Example.json here?
-                        }
-                    }
-                    catch (Exception E)
-                    {
-                        BlockLoaderMod.logger.Error(E, "Could not access \"" + BlockPath + "\"!");
-                        throw E;
-                    }
-                    m_CBDirectory = new DirectoryInfo(BlockPath);
-                }
-                return m_CBDirectory;
-            }
-        }
-
-        private static Dictionary<string, List<string>> AssetPaths = new Dictionary<string, List<string>>();
-        private static Dictionary<string, Texture2D> IconStore = new Dictionary<string, Texture2D>();
-        private static Dictionary<string, Mesh> MeshStore = new Dictionary<string, Mesh>();
-
         private static Dictionary<string, HashSet<string>> UsedPathNames = new Dictionary<string, HashSet<string>>();
-        private static Dictionary<string, string> FileNameReplacements = new Dictionary<string, string>();
+        internal static Dictionary<string, string> FileNameReplacements = new Dictionary<string, string>();
 
+        internal static Dictionary<UnofficialBlock, HashSet<string>> UsedAssetPathsPerBlock = new Dictionary<UnofficialBlock, HashSet<string>>();
+        internal static Dictionary<string, List<UnofficialBlock>> ConsumingBlocksPerAssetPath = new Dictionary<string, List<UnofficialBlock>>();
+        internal static Dictionary<string, UnofficialBlock> BlockByPath = new Dictionary<string, UnofficialBlock>();
         private static Dictionary<int, UnofficialBlock> LegacyBlocks = new Dictionary<int, UnofficialBlock>();
-        private static List<UnityEngine.Object> Assets = new List<UnityEngine.Object>();
-
-        private static bool AssetsLoaded = false;
-
-        private static string GetRelAssetPath(string path)
-        {
-            string assetPath = Path.GetFullPath(path);
-            string commonPath = Path.GetFullPath(CBDirectory.FullName);
-            return assetPath.Replace(commonPath, "");
-        }
-
-        private static IEnumerator<float> RegisterLowLevelAssets<T>(string extension, Func<string, T> LoadFromFile, Dictionary<string, T> assetDict)
-        {
-            FileInfo[] assets = CBDirectory.GetFiles(extension, SearchOption.AllDirectories);
-            int processed = 0;
-            int total = assets.Length;
-            foreach (FileInfo assetFile in assets)
-            {
-                string assetPath = Path.GetFullPath(assetFile.FullName);
-                T asset = LoadFromFile(assetPath);
-
-                string assetName = Path.GetFileName(assetFile.FullName);
-                string relPath = GetRelAssetPath(assetPath);
-
-                assetDict.Add(relPath, asset);
-                if (!AssetPaths.ContainsKey(assetName))
-                {
-                    AssetPaths.Add(assetName, new List<string> { relPath });
-                }
-                else
-                {
-                    AssetPaths[assetName].Add(relPath);
-                }
-                processed++;
-                yield return ((float)processed) / total;
-            }
-            yield break;
-        }
-
-        public static IEnumerator<float> LoadAssets()
-        {
-            if (!AssetsLoaded)
-            {
-                IEnumerator<float> textureIterator = RegisterLowLevelAssets<Texture2D>("*.png", TextureFromFile, IconStore);
-                while (textureIterator.MoveNext())
-                {
-                    yield return textureIterator.Current;
-                }
-                IEnumerator<float> meshIterator = RegisterLowLevelAssets<Mesh>("*.obj", MeshFromFile, MeshStore);
-                while (meshIterator.MoveNext())
-                {
-                    yield return meshIterator.Current;
-                }
-
-                // Load blocks
-                FileInfo[] blocks = CBDirectory.GetFiles("*.json", SearchOption.AllDirectories);
-                int processed = 0;
-                int total = blocks.Length;
-                foreach (FileInfo block in blocks)
-                {
-                    try
-                    {
-                        RegisterBlock(block);
-                    }
-                    catch (Exception e)
-                    {
-                        BlockLoaderMod.logger.Error("Failed to register block at path " + block.FullName + "\n" + e);
-                    }
-                    processed++;
-                    yield return ((float)processed) / total;
-                }
-
-                // Resolve Assets
-                IEnumerator<float> assetsIterator = ResolveAssets();
-                while (assetsIterator.MoveNext())
-                {
-                    yield return assetsIterator.Current;
-                }
-                AssetsLoaded = true;
-            }
-            yield break;
-        }
 
         private static readonly Regex FilesRegex = new Regex(
             @":\s*" + Regex.Escape("\"") + @"[^" + Regex.Escape("\"") + @"]+\.[a-zA-Z]+" + Regex.Escape("\""),
             RegexOptions.Compiled | RegexOptions.IgnoreCase
         );
-        internal static string ResolveFiles(string text, string path)
+        internal static string ResolveUsedAssetFilenames(string text, string path, out HashSet<string> usedFilePaths)
         {
-            string relativePath = GetRelAssetPath(path);
+            string relativePath = DirectoryAssetLoader.GetRelAssetPath(path);
             MatchCollection referencedFiles = FilesRegex.Matches(text);
             Dictionary<string, string> closestFiles = new Dictionary<string, string>();
+            usedFilePaths = new HashSet<string>();
 
             // Take note of what files this references.
             foreach (Match file in referencedFiles)
@@ -159,7 +43,7 @@ namespace LegacyBlockLoader
                 string actualFileName = Path.GetFileName(fileName);
                 if (!closestFiles.ContainsKey(actualFileName))
                 {
-                    if (AssetPaths.TryGetValue(actualFileName, out List<string> paths))
+                    if (DirectoryAssetLoader.AssetPaths.TryGetValue(actualFileName, out List<string> paths))
                     {
                         // If there actually is a file by the correct name present, check which instance is closest to the block.json
                         string closest = GetClosestPath(relativePath, paths);
@@ -174,12 +58,14 @@ namespace LegacyBlockLoader
                             {
                                 FileNameReplacements.Add(closest, fileNameTokens[0] + $"_N{usedNames.Count}." + fileNameTokens[1]);
                                 usedNames.Add(closest);
+                                usedFilePaths.Add(closest);
                             }
                         }
                         else
                         {
                             UsedPathNames.Add(actualFileName, new HashSet<string> { closest });
                             FileNameReplacements.Add(closest, fileNameTokens[0] + $"_N0." + fileNameTokens[1]);
+                            usedFilePaths.Add(closest);
                         }
                     }
                 }
@@ -227,76 +113,74 @@ namespace LegacyBlockLoader
             return closestPath;
         }
 
-        public static Mesh MeshFromFile(string path)
+        internal static void RegisterAssetPathsUsedByBlock(UnofficialBlock block, HashSet<string> usedAssetPaths)
         {
-            Mesh modelToEdit = new Mesh();
-            return FastObjImporter.Instance.ImportFileFromPath(path, modelToEdit);
-        }
+            BlockByPath[block.path] = block;
 
-        public static Texture2D TextureFromFile(string path)
-        {
-            byte[] data;
-            data = File.ReadAllBytes(path);
-            Texture2D texture;
-            texture = new Texture2D(2, 2);
-            texture.LoadImage(data);
-            return texture;
-        }
+            bool needsRepair = false;
+            HashSet<string> newAssetPaths = new HashSet<string>();
+            HashSet<string> oldAssetPaths = new HashSet<string>();
 
-        public static void RegisterBlock(FileInfo blockJSON)
-        {
-            UnofficialBlock block = new UnofficialBlock(blockJSON);
-            if (block != null)
+            // Determine if need to repair hashmap
+            if (UsedAssetPathsPerBlock.TryGetValue(block, out HashSet<string> currentPaths))
             {
-                LegacyBlocks[block.ID] = block;
-            }
-        }
-        
-        public static IEnumerator<float> ResolveAssets()
-        {
-            ModContainer container = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
-            BlockLoaderMod.logger.Info("Loaded Mod Container");
-
-            // Foreach asset, we get the actual value, and then rename it accordingly
-            foreach (KeyValuePair<string, string> pair in FileNameReplacements)
-            {
-                string pathName = pair.Key;
-                string assetName = pair.Value;
-
-                if (IconStore.TryGetValue(pathName, out Texture2D icon))
+                foreach (string path in currentPaths)
                 {
-                    icon.name = assetName;
-                    Assets.Add(icon);
+                    if (!usedAssetPaths.Contains(path))
+                    {
+                        oldAssetPaths.Add(path);
+                    }
                 }
-                else if (MeshStore.TryGetValue(pathName, out Mesh mesh))
+                foreach (string path in usedAssetPaths)
                 {
-                    mesh.name = assetName;
-                    Assets.Add(mesh);
+                    if (!currentPaths.Contains(path))
+                    {
+                        newAssetPaths.Add(path);
+                    }
+                }
+                needsRepair = oldAssetPaths.Count > 0;
+            }
+            else
+            {
+                newAssetPaths = usedAssetPaths;
+            }
+            if (needsRepair)
+            {
+                foreach (string path in oldAssetPaths)
+                {
+                    if (ConsumingBlocksPerAssetPath.TryGetValue(path, out List<UnofficialBlock> usedBlockList))
+                    {
+                        usedBlockList.Remove(block);
+                    }
                 }
             }
-            BlockLoaderMod.logger.Info("Processed Assets");
-
-            IEnumerator<float> assetsIterator = RegisterAssets(container);
-            while (assetsIterator.MoveNext())
+            foreach (string path in newAssetPaths)
             {
-                yield return assetsIterator.Current;
+                if (ConsumingBlocksPerAssetPath.TryGetValue(path, out List<UnofficialBlock> usedBlockList))
+                {
+                    usedBlockList.Add(block);
+                }
+                else
+                {
+                    usedBlockList = new List<UnofficialBlock>() { block };
+                    ConsumingBlocksPerAssetPath[path] = usedBlockList;
+                }
             }
-
-            // Clear the stuff we're not using anymore
-            AssetPaths.Clear();
-            IconStore.Clear();
-            MeshStore.Clear();
-            UsedPathNames.Clear();
-            FileNameReplacements.Clear();
-
-            // Add all assets into the ModContainer
-            container.Contents.m_AdditionalAssets.AddRange(Assets);
-            yield break;
+            HashSet<string> replacement = new HashSet<string>();
+            foreach (string path in usedAssetPaths)
+            {
+                replacement.Add(path);
+            }
+            if (UsedAssetPathsPerBlock.TryGetValue(block, out HashSet<string> oldSet))
+            {
+                oldSet.Clear();
+            }
+            UsedAssetPathsPerBlock[block] = replacement;
         }
 
         // Register assets so we can look them up later
         // Still need to hook into injection since we're not modifying m_Blocks in ModContents
-        public static IEnumerator<float> RegisterAssets(ModContainer container)
+        public static IEnumerator<float> RegisterBlockDefs(ModContainer container)
         {
             yield return 0.0f;
             // Assert block id uniqueness:
@@ -323,6 +207,16 @@ namespace LegacyBlockLoader
             }
             yield return 1.0f;
             yield break;
+        }
+
+        public static void RegisterBlock(FileInfo blockJSON)
+        {
+            UnofficialBlock block = new UnofficialBlock(blockJSON);
+            if (block != null)
+            {
+                DirectoryBlockLoader.RegisterAssetPathsUsedByBlock(block, block.usedAssetNames);
+                LegacyBlocks[block.ID] = block;
+            }
         }
 
         internal static readonly MethodInfo AutoAssignIDs = typeof(ManMods)
@@ -501,17 +395,65 @@ namespace LegacyBlockLoader
         }
 
         #region Injection helpers
+        internal static IEnumerator ProcessBlockJSON(int blockID, FactionSubTypes corpIndex, ModdedBlockDefinition moddedBlockDefinition, TankBlock tankBlock)
+        {
+            ManMods manMods = Singleton.Manager<ManMods>.inst;
+            ModContainer mod = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
+            BlockLoaderMod.logger.Trace("Preparing to read BlockJSON");
+            IEnumerator iterator = LoadBlockJSON(mod, blockID, moddedBlockDefinition, tankBlock);
+            while (iterator.MoveNext())
+            {
+                yield return null;
+            }
+
+            TankBlockTemplate physicalPrefab = moddedBlockDefinition.m_PhysicalPrefab;
+            physicalPrefab.gameObject.SetActive(false);
+            Damageable component3 = physicalPrefab.GetComponent<Damageable>();
+            ModuleDamage moduleDamage = physicalPrefab.GetComponent<ModuleDamage>();
+            tankBlock = physicalPrefab.GetComponent<TankBlock>();
+            Visible visible = physicalPrefab.GetComponent<Visible>();
+            visible.m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
+            component3.m_DamageableType = moddedBlockDefinition.m_DamageableType;
+            moduleDamage.maxHealth = moddedBlockDefinition.m_MaxHealth;
+            if (moduleDamage.deathExplosion == null)
+            {
+                BlockLoaderMod.logger.Trace($"DEATH EXPLOSION OVERRIDEN FOR {moduleDamage.name} ({blockID})");
+                moduleDamage.deathExplosion = manMods.m_DefaultBlockExplosion;
+            }
+            foreach (MeshRenderer meshRenderer in physicalPrefab.GetComponentsInChildren<MeshRenderer>())
+            {
+                MeshRendererTemplate component4 = meshRenderer.GetComponent<MeshRendererTemplate>();
+                if (component4 != null)
+                {
+                    meshRenderer.sharedMaterial = manMods.GetMaterial((int)corpIndex, component4.slot);
+                    d.Assert(meshRenderer.sharedMaterial != null, "[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
+                }
+            }
+            physicalPrefab.gameObject.name = moddedBlockDefinition.name;
+            physicalPrefab.gameObject.tag = "Untagged";
+            physicalPrefab.gameObject.layer = LayerMask.NameToLayer("Tank");
+            MeshCollider[] componentsInChildren2 = tankBlock.GetComponentsInChildren<MeshCollider>();
+            for (int i = 0; i < componentsInChildren2.Length; i++)
+            {
+                componentsInChildren2[i].convex = true;
+            }
+            yield break;
+        }
+
         private static readonly FieldInfo m_BlockNames = typeof(ManMods).GetField("m_BlockNames", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         private static readonly FieldInfo m_BlockDescriptions = typeof(ManMods).GetField("m_BlockDescriptions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        private static readonly FieldInfo m_BlockIDReverseLookup = typeof(ManMods).GetField("m_BlockIDReverseLookup", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        internal static readonly FieldInfo m_BlockIDReverseLookup = typeof(ManMods).GetField("m_BlockIDReverseLookup", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         internal static IEnumerator InjectLegacyBlock(
             ModSessionInfo sessionInfo, int blockID, int legacyID, ModdedBlockDefinition moddedBlockDefinition,
             Dictionary<int, Dictionary<int, Dictionary<BlockTypes, ModdedBlockDefinition>>> dictionary,
             Dictionary<int, Sprite> spriteDict
-        ) {
-            BlockLoaderMod.CurrentOperationSpecifics.SetValue(null, moddedBlockDefinition.m_BlockDisplayName);
+        )
+        {
+            if (BlockLoaderMod.CurrentOperationSpecifics != null)
+            {
+                BlockLoaderMod.CurrentOperationSpecifics.SetValue(null, moddedBlockDefinition.m_BlockDisplayName);
+            }
 
-            ModContainer mod = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
             ManMods manMods = Singleton.Manager<ManMods>.inst;
             int hashCode = ItemTypeInfo.GetHashCode(ObjectTypes.Block, blockID);
             FactionSubTypes corpIndex = manMods.GetCorpIndex(moddedBlockDefinition.m_Corporation, sessionInfo);
@@ -542,44 +484,12 @@ namespace LegacyBlockLoader
                 tankBlock.attachPoints = physicalPrefab.attachPoints.ToArray();
                 visible.m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
 
-                BlockLoaderMod.logger.Trace("Preparing to read BlockJSON");
-                IEnumerator iterator = LoadBlockJSON(mod, blockID, moddedBlockDefinition, tankBlock);
-                while (iterator.MoveNext())
+                IEnumerator processor = ProcessBlockJSON(blockID, corpIndex, moddedBlockDefinition, tankBlock);
+                while (processor.MoveNext())
                 {
                     yield return null;
                 }
-
                 physicalPrefab = moddedBlockDefinition.m_PhysicalPrefab;
-                physicalPrefab.gameObject.SetActive(false);
-                Damageable component3 = physicalPrefab.GetComponent<Damageable>();
-                moduleDamage = physicalPrefab.GetComponent<ModuleDamage>();
-                tankBlock = physicalPrefab.GetComponent<TankBlock>();
-                visible = physicalPrefab.GetComponent<Visible>();
-                visible.m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
-                component3.m_DamageableType = moddedBlockDefinition.m_DamageableType;
-                moduleDamage.maxHealth = moddedBlockDefinition.m_MaxHealth;
-                if (moduleDamage.deathExplosion == null)
-                {
-                    BlockLoaderMod.logger.Trace($"DEATH EXPLOSION OVERRIDEN FOR {moduleDamage.name} ({blockID})");
-                    moduleDamage.deathExplosion = manMods.m_DefaultBlockExplosion;
-                }
-                foreach (MeshRenderer meshRenderer in physicalPrefab.GetComponentsInChildren<MeshRenderer>())
-                {
-                    MeshRendererTemplate component4 = meshRenderer.GetComponent<MeshRendererTemplate>();
-                    if (component4 != null)
-                    {
-                        meshRenderer.sharedMaterial = manMods.GetMaterial((int)corpIndex, component4.slot);
-                        d.Assert(meshRenderer.sharedMaterial != null, "[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
-                    }
-                }
-                physicalPrefab.gameObject.name = moddedBlockDefinition.name;
-                physicalPrefab.gameObject.tag = "Untagged";
-                physicalPrefab.gameObject.layer = LayerMask.NameToLayer("Tank");
-                MeshCollider[] componentsInChildren2 = tankBlock.GetComponentsInChildren<MeshCollider>();
-                for (int i = 0; i < componentsInChildren2.Length; i++)
-                {
-                    componentsInChildren2[i].convex = true;
-                }
 
                 BlockLoaderMod.logger.Debug($"Pooling block {moddedBlockDefinition.name}");
                 tankBlock.transform.CreatePool(8);
@@ -592,7 +502,10 @@ namespace LegacyBlockLoader
             }
 
             BlockLoaderMod.logger.Trace("Setting up final injection");
-            BlockLoaderMod.CurrentOperationSpecifics.SetValue(null, moddedBlockDefinition.m_BlockDisplayName);
+            if (BlockLoaderMod.CurrentOperationSpecifics != null)
+            {
+                BlockLoaderMod.CurrentOperationSpecifics.SetValue(null, moddedBlockDefinition.m_BlockDisplayName);
+            }
 
             Dictionary<int, string> names = (Dictionary<int, string>) m_BlockNames.GetValue(manMods);
             names.Add(blockID, moddedBlockDefinition.m_BlockDisplayName);
