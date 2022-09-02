@@ -66,14 +66,11 @@ namespace LegacyBlockLoader
                 {
                     if (loggingLevelStr == null)
                     {
-                        Console.WriteLine($"[{loggerID}] General log level of {commandLineArgs[i + 1]} read");
                         loggingLevelStr = commandLineArgs[i + 1];
                     }
                 }
                 else if (commandLineArgs[i] == $"+log_level_{loggerID}" && i < commandLineArgs.Length - 1)
                 {
-                    string overrideStatement = loggingLevelStr == null ? "" : $", overriding general log level of {loggingLevelStr}";
-                    Console.WriteLine($"[{loggerID}] Custom log level of {commandLineArgs[i + 1]} read{overrideStatement}");
                     loggingLevelStr = commandLineArgs[i + 1];
                 }
             }
@@ -85,9 +82,12 @@ namespace LegacyBlockLoader
                 {
                     LogLevel loggingLevel = (LogLevel)Enum.Parse(typeof(LogLevel), loggingLevelStr, true);
                     this.minLoggingLevel = (byte)loggingLevel;
-                    Console.WriteLine($"[{loggerID}] Logging {loggingLevel} and up");
+                    if (minLoggingLevel <= (byte)LogLevel.DEBUG)
+                    {
+                        Console.WriteLine($"[{loggerID}] Logging {loggingLevel} and up");
+                    }
                 }
-                else
+                else if (minLoggingLevel <= (byte)LogLevel.DEBUG)
                 {
                     Console.WriteLine($"[{loggerID}] No log level found. Defaulting to {this.minLoggingLevel}");
                 }

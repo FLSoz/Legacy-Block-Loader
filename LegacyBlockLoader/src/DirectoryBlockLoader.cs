@@ -426,7 +426,10 @@ namespace LegacyBlockLoader
                 if (component4 != null)
                 {
                     meshRenderer.sharedMaterial = manMods.GetMaterial((int)corpIndex, component4.slot);
-                    d.Assert(meshRenderer.sharedMaterial != null, "[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
+                    if (meshRenderer.sharedMaterial == null)
+                    {
+                        BlockLoaderMod.logger.Error("[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
+                    }
                 }
             }
             physicalPrefab.gameObject.name = moddedBlockDefinition.name;
