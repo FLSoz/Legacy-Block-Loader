@@ -376,6 +376,10 @@ namespace LegacyBlockLoader
                                 {
                                     BlockLoaderMod.logger.Error(string.Format("Failed to parse module {0} in JSON for {1}", keyValuePair.Key, def));
                                 }
+                                else
+                                {
+                                    BlockLoaderMod.logger.Trace($"Parsed module {keyValuePair.Key} successfully");
+                                }
                             }
                             catch (Exception e)
                             {

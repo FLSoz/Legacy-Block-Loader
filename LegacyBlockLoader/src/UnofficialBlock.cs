@@ -18,6 +18,7 @@ namespace LegacyBlockLoader
         public readonly ModdedBlockDefinition blockDefinition;
         public JObject jObject;
         public readonly int ID;
+        // internal readonly UnofficialBlockDefinition unofficialDef;
         internal readonly string path;
         internal readonly HashSet<string> usedAssetNames = new HashSet<string>();
 
@@ -58,7 +59,7 @@ namespace LegacyBlockLoader
             return input.Replace("JSONBLOCK", "Deserializer");
         }
 
-        private static T TryParseEnum<T>(int val, T defaultValue) where T : Enum
+        internal static T TryParseEnum<T>(int val, T defaultValue) where T : Enum
         {
             if (EnumDict.TryGetValue(typeof(T), out EnumParser parser))
             {

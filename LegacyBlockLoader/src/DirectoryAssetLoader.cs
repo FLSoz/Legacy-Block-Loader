@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 using HarmonyLib;
+using Newtonsoft.Json.Linq;
 
 namespace LegacyBlockLoader
 {
@@ -135,12 +136,33 @@ namespace LegacyBlockLoader
             BlockLoaderMod.logger.Info($"Unofficial block {block.blockDefinition.m_BlockDisplayName} ({block.ID}) must be reparsed");
             block.ParseJSON();
             BlockLoaderMod.logger.Info($"BlockJSON Reparsed");
+
+            JProperty Grade = block.jObject.Property("Grade");
+            if (Grade != null)
+            {
+                Grade.Value = Grade.Value.ToObject<int>() + 1;
+            }
+            else
+            {
+                block.jObject.Add("Grade", 1);
+            }
+            BlockLoaderMod.logger.Info($"Grade set to {Grade.Value}");
+
+            JProperty Category = block.jObject.Property("Category");
+            if (Category != null)
+            {
+                BlockCategories blockCategory = UnofficialBlock.TryParseEnum<BlockCategories>(Category.Value.ToObject<int>(), BlockCategories.Standard);
+                BlockLoaderMod.logger.Info($"Category set to {blockCategory}");
+            }
+
             block.WrapJSON();
             BlockLoaderMod.logger.Info($"BlockJSON Wrapped");
 
             // Fetch needed info
             TankBlockTemplate oldPrefab = block.blockDefinition.m_PhysicalPrefab;
             oldPrefab.transform.DeletePool<Transform>();
+            BlockLoaderMod.logger.Debug($"Old pool deleted");
+
             TankBlock tankBlock = oldPrefab.gameObject.GetComponent<TankBlock>();
             ManMods manMods = Singleton.Manager<ManMods>.inst;
             ModSessionInfo currentSession = (ModSessionInfo)m_CurrentSession.GetValue(manMods);
@@ -155,13 +177,35 @@ namespace LegacyBlockLoader
             }
             BlockLoaderMod.logger.Info($"BlockJSON Reprocessed {blockSessionID}");
             TankBlockTemplate newPrefab = block.blockDefinition.m_PhysicalPrefab;
+            if (newPrefab == null)
+            {
+                BlockLoaderMod.logger.Error("PREFAB IS NULL");
+            }
 
-            GameObject.DestroyImmediate(oldPrefab);
-            newPrefab.transform.CreatePool(8);
+            if (oldPrefab != newPrefab)
+            {
+                GameObject.DestroyImmediate(oldPrefab);
+                BlockLoaderMod.logger.Debug($"Old prefab destroyed");
+            }
+
+            newPrefab.transform.CreatePool<Transform>(8);
+            BlockLoaderMod.logger.Debug($"New pool created");
+
+            TankBlock newBlock = newPrefab.GetComponent<TankBlock>();
 
             Singleton.Manager<ManSpawn>.inst.RemoveBlockFromDictionary(blockSessionID);
             Singleton.Manager<ManSpawn>.inst.AddBlockToDictionary(newPrefab.gameObject, blockSessionID);
-            BlockLoaderMod.logger.Info($"{blockSessionID} Prefabs rewired");
+            BlockLoaderMod.logger.Debug($"Dictionary handled");
+
+            TankBlock updatedPrefab = Singleton.Manager<ManSpawn>.inst.GetBlockPrefab((BlockTypes) blockSessionID);
+            if (updatedPrefab == newBlock && Singleton.Manager<ManSpawn>.inst.IsValidBlockToSpawn((BlockTypes) blockSessionID))
+            {
+                BlockLoaderMod.logger.Info($"{blockSessionID} Prefabs rewired");
+            }
+            else
+            {
+                BlockLoaderMod.logger.Error($"{blockSessionID} FAILED to rewire prefab");
+            }
         }
 
         internal static IEnumerator<object> ReloadAssets()
@@ -186,6 +230,7 @@ namespace LegacyBlockLoader
                         {
                             newBlocks.Add(file.FullName);
                         }
+                        FileChanged[file.FullName] = file.LastWriteTime;
                     }
                 }
                 else
@@ -214,6 +259,7 @@ namespace LegacyBlockLoader
                                 blocksToReparse.Add(block);
                             }
                         }
+                        FileChanged[relPath] = file.LastWriteTime;
                     }
                 }
                 else
@@ -242,6 +288,7 @@ namespace LegacyBlockLoader
                                 blocksToReparse.Add(block);
                             }
                         }
+                        FileChanged[relPath] = file.LastWriteTime;
                     }
                 }
                 else
