@@ -232,30 +232,10 @@ namespace LegacyBlockLoader
             }
         }
 
-        internal static class ModuleItemConsume_UnlockDeliveryBlockerRange
-        {
-            static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-            {
-                var codes = instructions.ToList();
-                var check = codes.FirstOrDefault(ci => ci.opcode == OpCodes.Ldc_R4 && (int)ci.operand == 23);
-                if (check != null && check != default(CodeInstruction)) check.operand = 512;
-                return codes;
-            }
-        }
-
-        internal static class ModuleItemConsume_CrashWrapper
-        {
-            static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-            {
-                var codes = instructions.ToList();
-                //var check = codes.FirstOrDefault(ci => ci.opcode == OpCodes.Ldc_R4 && (int)ci.operand == 23);
-                //if (check != null && check != default(CodeInstruction)) check.operand = 512;
-                return codes;
-            }
-        }
-
+        [HarmonyPatch(typeof(Projectile), "PrePool")]
         internal static class Projectile_UnlockColliderQuantity
         {
+            [HarmonyTranspiler]
             static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
                 var codes = instructions.ToList();
@@ -268,7 +248,7 @@ namespace LegacyBlockLoader
                     // load arg 0
                     // call get_gameObject
                     codes.RemoveRange(3, stfld - 3); // Keeps the first 3 ILcodes
-                    codes.Insert(3, new CodeInstruction(OpCodes.Call, typeof(Projectile_UnlockColliderQuantity).GetMethod("Projectile_GetCollider", BindingFlags.Public | BindingFlags.Static)));
+                    codes.Insert(3, new CodeInstruction(OpCodes.Call, typeof(Projectile_UnlockColliderQuantity).GetMethod(nameof(Projectile_GetCollider), BindingFlags.Public | BindingFlags.Static)));
                 }
                 BlockLoaderMod.logger.Debug($"Projectile_UnlockColliderQuantity: Transpiling removed {stfld - 3} IL lines, added 1");
                 //for (int i = 0; i < codes.Count; i++)
@@ -285,24 +265,6 @@ namespace LegacyBlockLoader
                 }
                 return null;
             }
-        }
-
-        public static int CheckVersion(string baseVersion, string currentCheck)
-        {
-            var cArr = currentCheck.Split('.');
-            var tArr = baseVersion.Split('.');
-            int max = Math.Max(cArr.Length, tArr.Length);
-            for (int i = 0; i < max; i++)
-            {
-                int currVal = 0, baseVal = 0;
-                if (cArr.Length > i) currVal = int.Parse(cArr[i]);
-                if (tArr.Length > i) baseVal = int.Parse(tArr[i]);
-
-                if (currVal == baseVal) continue;
-                if (currVal > baseVal) return 1;
-                return -1;
-            }
-            return 0;
         }
     }
 }
