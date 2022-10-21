@@ -76,20 +76,22 @@ namespace LegacyBlockLoader
         public UnofficialBlock(string filePath)
         {
             this.path = filePath;
+            BlockLoaderMod.logger.Info($" 📄 Preparing to parse file");
             string fileParsed = ParseJSON();
+            BlockLoaderMod.logger.Trace(fileParsed);
             try
             {
                 this.blockDefinition = ScriptableObject.CreateInstance<ModdedBlockDefinition>();
                 
-                BlockLoaderMod.logger.Trace($"Preparing to parse file:\n{fileParsed}");
                 UnofficialBlockDefinition unofficialDef = this.jObject.ToObject<UnofficialBlockDefinition>(new JsonSerializer() { MissingMemberHandling = MissingMemberHandling.Ignore });
                 
                 this.ID = unofficialDef.ID;
                 this.Setup(unofficialDef);
+                BlockLoaderMod.logger.Info($" ✔️ Setup complete");
             }
             catch (Exception e)
             {
-                BlockLoaderMod.logger.Error(e, "FAILED to read JSON");
+                BlockLoaderMod.logger.Error(e, "❌ FAILED to read JSON");
                 throw e;
             }
         }
@@ -113,7 +115,7 @@ namespace LegacyBlockLoader
             }
             catch (Exception e)
             {
-                BlockLoaderMod.logger.Error(e, "FAILED to parse file " + path);
+                BlockLoaderMod.logger.Error(e, "❌ FAILED to parse file " + path);
                 throw e;
             }
         }
@@ -125,7 +127,7 @@ namespace LegacyBlockLoader
             {
                 corpType = FactionSubTypes.GSO;
             }
-            BlockLoaderMod.logger.Info($"Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
+            BlockLoaderMod.logger.Info($"  📜 Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
 
             if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
             {
@@ -174,7 +176,7 @@ namespace LegacyBlockLoader
             this.blockDefinition.m_Mass = unofficialDef.Mass;
             this.blockDefinition.name = unofficialDef.Name;
 
-            BlockLoaderMod.logger.Info($"Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
+            BlockLoaderMod.logger.Info($"  🚩 Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
 
             GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
             prefab.AddComponent<MeshFilter>();

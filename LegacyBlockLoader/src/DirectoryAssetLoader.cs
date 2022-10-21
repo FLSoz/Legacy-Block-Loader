@@ -39,6 +39,10 @@ namespace LegacyBlockLoader
 
                 string assetName = Path.GetFileName(assetFile.FullName);
                 string relPath = GetRelAssetPath(assetPath);
+                string emojiPrefix = "";
+                if (extension == "*.png") { emojiPrefix = "🖼️ "; }
+                else if (extension == "*.obj") { emojiPrefix = "📐 "; }
+                BlockLoaderMod.logger.Debug($" {emojiPrefix}Located asset {relPath}");
 
                 FileChanged[relPath] = assetFile.LastWriteTime;
 
@@ -107,7 +111,6 @@ namespace LegacyBlockLoader
                     Assets.Add(mesh);
                 }
             }
-            BlockLoaderMod.logger.Info("Processed Assets");
             yield break;
         }
 
@@ -171,7 +174,7 @@ namespace LegacyBlockLoader
 
             // Run the processor on this again
             int blockSessionID = visible.m_ItemType.ItemType;
-            IEnumerator processor = DirectoryBlockLoader.ProcessBlockJSON(blockSessionID, corpIndex, block.blockDefinition, tankBlock);
+            IEnumerator processor = ProcessBlockJSON(blockSessionID, corpIndex, block.blockDefinition, tankBlock);
             while (processor.MoveNext())
             {
             }
@@ -206,6 +209,123 @@ namespace LegacyBlockLoader
             {
                 BlockLoaderMod.logger.Error($"{blockSessionID} FAILED to rewire prefab");
             }
+        }
+
+        internal static FieldInfo sLoaders = AccessTools.Field(typeof(JSONBlockLoader), "sLoaders");
+        internal static IEnumerator LoadBlockJSON(ModContainer mod, int blockID, ModdedBlockDefinition def, TankBlock block)
+        {
+            if (def != null)
+            {
+                JObject jobject = null;
+                try
+                {
+                    if (Singleton.Manager<ManMods>.inst.ShouldReadFromRawJSON)
+                    {
+                        string text = mod.AssetBundlePath.Substring(0, mod.AssetBundlePath.LastIndexOf('/')) + "/BlockJSON/" + def.name + ".json";
+                        if (File.Exists(text))
+                        {
+                            jobject = JObject.Parse(File.ReadAllText(text));
+                            BlockLoaderMod.logger.Info("[Mods] Read JSON from " + text + " as an override");
+                        }
+                        else
+                        {
+                            BlockLoaderMod.logger.Info("[Mods] Block " + def.name + " could not find a JSON override at " + text);
+                        }
+                    }
+                    if (jobject == null)
+                    {
+                        jobject = JObject.Parse(def.m_Json.text);
+                        BlockLoaderMod.logger.Info("[Mods] Read JSON from asset bundle for " + def.name);
+                    }
+                }
+                catch (Exception e)
+                {
+                    BlockLoaderMod.logger.Error("FAILED to read BlockJSON");
+                    BlockLoaderMod.logger.Error(e);
+                    yield break;
+                }
+                if (jobject != null)
+                {
+                    Dictionary<string, JSONModuleLoader> loaders = (Dictionary<string, JSONModuleLoader>)sLoaders.GetValue(null);
+                    foreach (KeyValuePair<string, JToken> keyValuePair in jobject)
+                    {
+                        JSONModuleLoader jsonmoduleLoader;
+                        if (loaders.TryGetValue(keyValuePair.Key, out jsonmoduleLoader))
+                        {
+                            try
+                            {
+                                if (!jsonmoduleLoader.CreateModuleForBlock(blockID, def, block, keyValuePair.Value))
+                                {
+                                    BlockLoaderMod.logger.Error(string.Format("Failed to parse module {0} in JSON for {1}", keyValuePair.Key, def));
+                                }
+                                else
+                                {
+                                    BlockLoaderMod.logger.Trace($"Parsed module {keyValuePair.Key} successfully");
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                BlockLoaderMod.logger.Error($"FAILED to process block module {keyValuePair.Key}");
+                                BlockLoaderMod.logger.Error(e);
+                            }
+                        }
+                        else
+                        {
+                            BlockLoaderMod.logger.Error(string.Format("Could not parse module {0} in JSON for {1}", keyValuePair.Key, def));
+                        }
+                        yield return null;
+                    }
+                }
+            }
+            yield break;
+        }
+
+        internal static IEnumerator ProcessBlockJSON(int blockID, FactionSubTypes corpIndex, ModdedBlockDefinition moddedBlockDefinition, TankBlock tankBlock)
+        {
+            ManMods manMods = Singleton.Manager<ManMods>.inst;
+            ModContainer mod = Singleton.Manager<ManMods>.inst.FindMod("LegacyBlockLoader");
+            BlockLoaderMod.logger.Trace("Preparing to read BlockJSON");
+            IEnumerator iterator = LoadBlockJSON(mod, blockID, moddedBlockDefinition, tankBlock);
+            while (iterator.MoveNext())
+            {
+                yield return null;
+            }
+
+            TankBlockTemplate physicalPrefab = moddedBlockDefinition.m_PhysicalPrefab;
+            physicalPrefab.gameObject.SetActive(false);
+            Damageable component3 = physicalPrefab.GetComponent<Damageable>();
+            ModuleDamage moduleDamage = physicalPrefab.GetComponent<ModuleDamage>();
+            tankBlock = physicalPrefab.GetComponent<TankBlock>();
+            Visible visible = physicalPrefab.GetComponent<Visible>();
+            visible.m_ItemType = new ItemTypeInfo(ObjectTypes.Block, blockID);
+            component3.m_DamageableType = moddedBlockDefinition.m_DamageableType;
+            moduleDamage.maxHealth = moddedBlockDefinition.m_MaxHealth;
+            if (moduleDamage.deathExplosion == null)
+            {
+                BlockLoaderMod.logger.Trace($"DEATH EXPLOSION OVERRIDEN FOR {moduleDamage.name} ({blockID})");
+                moduleDamage.deathExplosion = manMods.m_DefaultBlockExplosion;
+            }
+            foreach (MeshRenderer meshRenderer in physicalPrefab.GetComponentsInChildren<MeshRenderer>())
+            {
+                MeshRendererTemplate component4 = meshRenderer.GetComponent<MeshRendererTemplate>();
+                if (component4 != null)
+                {
+                    meshRenderer.sharedMaterial = manMods.GetMaterial((int)corpIndex, component4.slot);
+                    if (meshRenderer.sharedMaterial == null)
+                    {
+                        BlockLoaderMod.logger.Error("[LegacyBlockLoader] Custom block " + moddedBlockDefinition.m_BlockDisplayName + " could not load texture. Corp was " + moddedBlockDefinition.m_Corporation);
+                    }
+                }
+            }
+            physicalPrefab.gameObject.name = moddedBlockDefinition.name;
+            physicalPrefab.gameObject.tag = "Untagged";
+            physicalPrefab.gameObject.layer = LayerMask.NameToLayer("Tank");
+            MeshCollider[] componentsInChildren2 = tankBlock.GetComponentsInChildren<MeshCollider>();
+            for (int i = 0; i < componentsInChildren2.Length; i++)
+            {
+                componentsInChildren2[i].convex = true;
+            }
+            yield break;
         }
 
         internal static IEnumerator<object> ReloadAssets()
