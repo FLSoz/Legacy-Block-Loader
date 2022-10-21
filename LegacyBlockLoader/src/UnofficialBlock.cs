@@ -76,7 +76,7 @@ namespace LegacyBlockLoader
         public UnofficialBlock(string filePath)
         {
             this.path = filePath;
-            BlockLoaderMod.logger.Info($" 📄 Preparing to parse file");
+            BlockLoaderMod.logger.Info($" 📄 Parsing {filePath}");
             string fileParsed = ParseJSON();
             BlockLoaderMod.logger.Trace(fileParsed);
             try
@@ -127,7 +127,7 @@ namespace LegacyBlockLoader
             {
                 corpType = FactionSubTypes.GSO;
             }
-            BlockLoaderMod.logger.Info($"  📜 Read mod as {unofficialDef.ID}, {unofficialDef.Name}, for corp {corpType}");
+            BlockLoaderMod.logger.Debug($"  📜 Read mod as {unofficialDef.ID}, {unofficialDef.Name}, for corp {corpType}");
             BlockLoaderMod.logger.Debug($"  🧾 Description: {unofficialDef.Description}");
 
             if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
@@ -177,7 +177,7 @@ namespace LegacyBlockLoader
             this.blockDefinition.m_Mass = unofficialDef.Mass;
             this.blockDefinition.name = unofficialDef.Name;
 
-            BlockLoaderMod.logger.Info($"  🚩 Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
+            BlockLoaderMod.logger.Debug($"  🚩 Injecting into Corp {this.blockDefinition.m_Corporation}, Grade: {this.blockDefinition.m_Grade}");
 
             GameObject prefab = new GameObject($"{unofficialDef.Name}_Prefab");
             prefab.AddComponent<MeshFilter>();

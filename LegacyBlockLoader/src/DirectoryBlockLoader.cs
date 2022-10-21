@@ -195,7 +195,7 @@ namespace LegacyBlockLoader
                 }
                 blockID += (version > 0 ? "_" + version.ToString() : "");
                 pair.Value.blockDefinition.name = ModUtils.GetAssetFromCompoundId(blockID);
-                BlockLoaderMod.logger.Info($" ✔️ Reassigned block {pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) to unique ID {blockID}");
+                BlockLoaderMod.logger.Debug($" ✔️ Reassigned block {pair.Value.blockDefinition.m_BlockDisplayName} ({pair.Key}) to unique ID {blockID}");
                 definitionMap.Add(blockID, pair.Value);
             }
 
