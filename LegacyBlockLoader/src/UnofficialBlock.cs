@@ -127,7 +127,8 @@ namespace LegacyBlockLoader
             {
                 corpType = FactionSubTypes.GSO;
             }
-            BlockLoaderMod.logger.Info($"  📜 Read mod as {unofficialDef.ID}, {unofficialDef.Name}, {unofficialDef.Description} for corp {corpType}");
+            BlockLoaderMod.logger.Info($"  📜 Read mod as {unofficialDef.ID}, {unofficialDef.Name}, for corp {corpType}");
+            BlockLoaderMod.logger.Debug($"  🧾 Description: {unofficialDef.Description}");
 
             if (unofficialDef.Name is null || unofficialDef.Name.Length == 0)
             {
