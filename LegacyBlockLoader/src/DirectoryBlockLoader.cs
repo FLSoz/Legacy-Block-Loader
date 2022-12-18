@@ -206,6 +206,8 @@ namespace LegacyBlockLoader
                 // Assets.Add(block.blockDefinition);
             }
             yield return 1.0f;
+
+            BlockLoaderMod.logger.Trace("🏁 Blockdefs registered");
             yield break;
         }
 

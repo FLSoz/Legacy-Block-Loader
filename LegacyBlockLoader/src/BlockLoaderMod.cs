@@ -148,6 +148,7 @@ namespace LegacyBlockLoader
                 // Add all assets into the ModContainer
                 ThisContainer.Contents.m_AdditionalAssets.AddRange(DirectoryAssetLoader.Assets);
             }
+            BlockLoaderMod.logger.Trace("🏁 EarlyInit complete");
             yield break;
         }
 

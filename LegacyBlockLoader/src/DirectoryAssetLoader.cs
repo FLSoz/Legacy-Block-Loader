@@ -58,6 +58,8 @@ namespace LegacyBlockLoader
                 processed++;
                 yield return ((float)processed) / total;
             }
+
+            BlockLoaderMod.logger.Trace($"🏁 Assets of type {typeof(T)} registered");
             yield break;
         }
 
@@ -73,6 +75,8 @@ namespace LegacyBlockLoader
             {
                 yield return meshIterator.Current;
             }
+
+            BlockLoaderMod.logger.Trace("🏁 Assets loaded");
             yield break;
         }
 
@@ -111,6 +115,8 @@ namespace LegacyBlockLoader
                     Assets.Add(mesh);
                 }
             }
+
+            BlockLoaderMod.logger.Trace("🏁 Assets resolved");
             yield break;
         }
 
@@ -277,6 +283,8 @@ namespace LegacyBlockLoader
                     }
                 }
             }
+
+            BlockLoaderMod.logger.Trace("🏁 BlockJSON loaded");
             yield break;
         }
 
@@ -325,6 +333,8 @@ namespace LegacyBlockLoader
             {
                 componentsInChildren2[i].convex = true;
             }
+
+            BlockLoaderMod.logger.Trace("🏁 BlockJSON processed");
             yield break;
         }
 
@@ -425,6 +435,7 @@ namespace LegacyBlockLoader
                 yield return null;
             }
 
+            BlockLoaderMod.logger.Trace("🏁 Asset reload completed");
             yield break;
         }
     }
