@@ -8,6 +8,10 @@ using HarmonyLib;
 using CustomModules;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
+using static LocalisationEnums;
+using static CompoundExpression;
+using static Localisation;
+using System.Collections;
 
 
 namespace LegacySnapshotLoader
@@ -18,8 +22,9 @@ namespace LegacySnapshotLoader
         internal static FieldInfo m_Mods = typeof(ManMods).GetField("m_Mods", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         internal static FieldInfo m_BlockNames = typeof(ManMods).GetField("m_BlockNames", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-        private static int VanillaIDs = Enum.GetValues(typeof(BlockTypes)).Length;
+        internal static int VanillaIDs = Enum.GetValues(typeof(BlockTypes)).Length;
         private static readonly int[] AcebaIDs = new int[] {
+                998,999,
                 9000, 9001, 9002, 9003, 9005, 9210, 9211, 10000, 10001,
                 98341, 98342, 98343, 98344, 98345,
                 98350, 98351, 98352, 98353, 98354, 98355, 98356,
@@ -150,7 +155,38 @@ namespace LegacySnapshotLoader
                 { 93000000, "XAM5021" },
             };
 
-        internal static int InvalidID = 0;
+        private static int _invalidID;
+        internal static int FirstInvalidID
+        {
+            get
+            {
+                // Set invalid ID to 1 above highest
+                if (_invalidID == 0)
+                {
+                    Dictionary<int, string> blockNames = (Dictionary<int, string>)m_BlockNames.GetValue(Singleton.Manager<ManMods>.inst);
+                    _invalidID = ManMods.k_FIRST_MODDED_BLOCK_ID + blockNames.Count() + 1;
+                }
+                return _invalidID;
+            }
+            set {
+                _invalidID = value;
+            }
+        }
+        internal static int CurrInvalidID;
+
+        internal static void PurgeMetadata()
+        {
+            FirstInvalidID = 0;
+            CurrInvalidID = 0;
+            // Clear dicts used for name fetching
+            LegacyLookupIDCache.Clear();
+            SessionIDCache.Clear();
+            LegacyIDToInvalidID.Clear();
+            InvalidIDToLegacyID.Clear();
+            LegacyIDToName.Clear();
+            NameToInvalidID.Clear();
+            InvalidIDToName.Clear();
+        }
 
         internal static LRUCache<int, bool> IsLegacyCache = new LRUCache<int, bool>(500);
         internal static LRUCache<int, int> LegacyLookupIDCache = new LRUCache<int, int>(1000);
@@ -191,7 +227,7 @@ namespace LegacySnapshotLoader
             return false;
         }
 
-        private static bool IsLegacyID(int id)
+        private static bool SearchLegacyClaims(int id)
         {
             SnapshotLoaderMod.logger.Debug($"Checking if block {id} is a legacy ID");
             if (SearchSortedArray(AcebaIDs, id))
@@ -213,6 +249,123 @@ namespace LegacySnapshotLoader
             }
             // SnapshotLoaderMod.logger.Debug($"NOT a modded ID");
             return false;
+        }
+
+        // WE ARE ASSUMING NOBODY WILL HAVE 500,000 MODDED BLOCKS, AND VANILLA CUTOFF STAYS AT 1,000,000
+        internal static bool IsLegacy(int blockID)
+        {
+            bool isLegacy = blockID < ManMods.k_FIRST_MODDED_BLOCK_ID;
+            if (!isLegacy && !PatchSnapshotLoadCompatibility.IsLegacyCache.TryGetValue(blockID, out isLegacy))
+            {
+                isLegacy = SearchLegacyClaims(blockID);
+                IsLegacyCache.Put(blockID, isLegacy);
+            }
+            return isLegacy;
+        }
+
+        internal static bool GetSessionIDForLegacyBlock(int blockID, string name, out int sessionID)
+        {
+            object[] args = new object[] { blockID, null };
+            string adjName = name + " ";
+            if ((bool)TryGetSessionID.Invoke(null, args))
+            {
+                SnapshotLoaderMod.logger.Debug($"Found SESSION ID: {args[1]} for Legacy block {adjName}({blockID})");
+                LegacyLookupIDCache.Put(blockID, (int)args[1]);
+                sessionID = (int)args[1];
+                return true;
+            }
+            else
+            {
+                // We know this is a legacy block, but no session ID has been found
+                SnapshotLoaderMod.logger.Warn($"Legacy block {adjName}({blockID}) NOT in session! Trying official as backup");
+                if (SearchSortedRangeList(Claims, blockID, out int rangeStart))
+                {
+                    if (ModCreators.TryGetValue(rangeStart, out string creator))
+                    {
+                        SnapshotLoaderMod.logger.Debug($"Is a {creator} ID");
+                    }
+                    else
+                    {
+                        SnapshotLoaderMod.logger.Warn($"Is a modded ID from UNKNOWN author");
+                    }
+                }
+            }
+            sessionID = AssignNewInvalidID(blockID, name);
+            return false;
+        }
+
+        // Name handling for legacy blocks
+        private static Dictionary<int, int> LegacyIDToInvalidID = new Dictionary<int, int>();
+        private static Dictionary<int, int> InvalidIDToLegacyID = new Dictionary<int, int>();
+        private static Dictionary<int, string> LegacyIDToName = new Dictionary<int, string>();
+        // Name handling for missing official blocks
+        private static Dictionary<string, int> NameToInvalidID = new Dictionary<string, int>();
+        private static Dictionary<int, string> InvalidIDToName = new Dictionary<int, string>();
+
+        internal static int AssignNewInvalidID(int blockID, string name)
+        {
+            if (IsLegacy(blockID))
+            {
+                // for legacy IDs, the legacy ID itself is a core part of the name
+                if (LegacyIDToInvalidID.TryGetValue(blockID, out int invalidID)) {
+                    string oldName = LegacyIDToName[blockID];
+                    if (!oldName.Equals(name))
+                    {
+                        if (name.Length > oldName.Length)
+                        {
+                            SnapshotLoaderMod.logger.Warn($"Multiple names found for legacy ID {blockID}. Choosing more descriptive [{name}] over ({oldName})");
+                            LegacyIDToName[blockID] = name;
+                        }
+                        else
+                        {
+                            SnapshotLoaderMod.logger.Warn($"Multiple names found for legacy ID {blockID}. Choosing more descriptive [{oldName}] over ({name})");
+                        }
+                    }
+                    return invalidID;
+                }
+                else
+                {
+                    CurrInvalidID = Math.Max(CurrInvalidID, FirstInvalidID) + 1;
+                    LegacyIDToInvalidID.Add(blockID, CurrInvalidID);
+                    InvalidIDToLegacyID.Add(CurrInvalidID, blockID);
+                    LegacyIDToName.Add(blockID, name);
+                    return CurrInvalidID;
+                }
+            }
+            else
+            {
+                if (NameToInvalidID.TryGetValue(name, out int invalidID))
+                {
+                    return invalidID;
+                }
+                else
+                {
+                    CurrInvalidID = Math.Max(CurrInvalidID, FirstInvalidID) + 1;
+                    NameToInvalidID.Add(name, CurrInvalidID);
+                    InvalidIDToName.Add(CurrInvalidID, name);
+                    return CurrInvalidID;
+                }
+            }
+        }
+
+        internal static string GetNameOfInvalidID(int invalidID)
+        {
+            if (InvalidIDToName.TryGetValue((int)invalidID, out string name))
+            {
+                return name;
+            }
+            else if (InvalidIDToLegacyID.TryGetValue((int)invalidID, out int legacyID))
+            {
+                if (LegacyIDToName.TryGetValue(legacyID, out name))
+                {
+                    return $"{name} ({legacyID})";
+                }
+                else
+                {
+                    SnapshotLoaderMod.logger.Error($"LEGACY ID TO NAME MAP IS CORRUPTED");
+                }
+            }
+            return null;
         }
 
         [HarmonyPrefix]
@@ -245,38 +398,11 @@ namespace LegacySnapshotLoader
             else
             {
                 SnapshotLoaderMod.logger.Trace($"Trying to load block with name {__instance.block}");
-                bool isLegacy = blockID < ManMods.k_FIRST_MODDED_BLOCK_ID;
-                if (!isLegacy && !IsLegacyCache.TryGetValue(blockID, out isLegacy)) 
+                bool isLegacy = IsLegacy(blockID);
+                if (isLegacy && GetSessionIDForLegacyBlock(blockID, __instance.block, out int sessionID))
                 {
-                    isLegacy = IsLegacyID(blockID);
-                    IsLegacyCache.Put(blockID, isLegacy);
-                }
-                if (isLegacy)
-                {
-                    object[] args = new object[] { blockID, null };
-                    if ((bool)TryGetSessionID.Invoke(null, args))
-                    {
-                        SnapshotLoaderMod.logger.Debug($"Found SESSION ID: {args[1]} for Legacy block [{__instance.block} ({blockID})]");
-                        LegacyLookupIDCache.Put(blockID, (int)args[1]);
-                        __result = (BlockTypes)args[1];
-                        return false;
-                    }
-                    else
-                    {
-                        // We know this is a legacy block, but no session ID has been found
-                        SnapshotLoaderMod.logger.Warn($"Legacy block [{__instance.block} ({blockID})] NOT in session! Trying official as backup");
-                        if (SearchSortedRangeList(Claims, blockID, out int rangeStart))
-                        {
-                            if (ModCreators.TryGetValue(rangeStart, out string creator))
-                            {
-                                SnapshotLoaderMod.logger.Debug($"Is a {creator} ID");
-                            }
-                            else
-                            {
-                                SnapshotLoaderMod.logger.Warn($"Is a modded ID from UNKNOWN author");
-                            }
-                        }
-                    }
+                    __result = (BlockTypes)sessionID;
+                    return false;
                 }
 
                 // Try to find this block via official means
@@ -304,26 +430,13 @@ namespace LegacySnapshotLoader
                     {
                         // If BlockInjector is present, assume block may have been loaded through there, don't touch it
                         // Otherwise, there may be the case it's a legitimate official modded block that got removed. Set the ID to something invalid so no mistakes are made
-                        if (blockID >= ManMods.k_FIRST_MODDED_BLOCK_ID && !SnapshotLoaderMod.HasBlockInjector)
+                        if (SnapshotLoaderMod.HasBlockInjector)
                         {
-                            // Set invalid ID to 1 above highest
-                            if (InvalidID == 0)
-                            {
-                                Dictionary<int, string> blockNames = (Dictionary<int, string>)m_BlockNames.GetValue(Singleton.Manager<ManMods>.inst);
-                                InvalidID = ManMods.k_FIRST_MODDED_BLOCK_ID + blockNames.Count() + 1;
-                            }
-                            if (blockID < InvalidID)
-                            {
-                                newID = InvalidID;
-                            }
-                            else
-                            {
-                                newID = blockID;
-                            }
+                            newID = blockID;
                         }
                         else
                         {
-                            newID = blockID;
+                            newID = AssignNewInvalidID(blockID, __instance.block);
                         }
                         SnapshotLoaderMod.logger.Debug($"BlockInjector found: {SnapshotLoaderMod.HasBlockInjector}");
                         SnapshotLoaderMod.logger.Debug($"Resolving {blockID} to ID {newID}");
@@ -331,20 +444,7 @@ namespace LegacySnapshotLoader
                     }
                     else
                     {
-                        // Set invalid ID to 1 above highest
-                        if (InvalidID == 0)
-                        {
-                            Dictionary<int, string> blockNames = (Dictionary<int, string>)m_BlockNames.GetValue(Singleton.Manager<ManMods>.inst);
-                            InvalidID = ManMods.k_FIRST_MODDED_BLOCK_ID + blockNames.Count() + 1;
-                        }
-                        if (blockID < InvalidID)
-                        {
-                            newID = InvalidID;
-                        }
-                        else
-                        {
-                            newID = blockID;
-                        }
+                        newID = AssignNewInvalidID(blockID, __instance.block);
                         SnapshotLoaderMod.logger.Debug($"Invalid official block found, resolved to invalid ID: {newID}");
                         SessionIDCache.Put(__instance.block, newID);
                     }
@@ -355,15 +455,107 @@ namespace LegacySnapshotLoader
         }
     }
 
-    [HarmonyPatch(typeof(ManMods), "PurgeModdedContentFromGame")]
-    internal class PatchInvalidIDPerSession
+    [HarmonyPatch(typeof(ManMods), "FindBlockName")]
+    internal class PatchInvalidBlockName
     {
-        [HarmonyPostfix]
-        internal static void Postfix()
+        internal static readonly FieldInfo m_BlockNames = AccessTools.Field(typeof(StringLookup), "m_BlockNames");
+        internal static readonly MethodInfo GetString = AccessTools.Method(typeof(StringLookup), "GetString");
+
+        internal static void Postfix(int blockID, ref string __result)
         {
-            PatchSnapshotLoadCompatibility.InvalidID = 0;
+            if (__result.Equals("Unknown Modded Block"))
+            {
+                string cachedName = PatchSnapshotLoadCompatibility.GetNameOfInvalidID(blockID);
+                if (cachedName == null)
+                {
+                    SnapshotLoaderMod.logger.Error($"ID {blockID} has no cached name?");
+                }
+                else
+                {
+                    SnapshotLoaderMod.logger.Info($"Got name {cachedName} for invalid ID {blockID}");
+                    __result = cachedName;
+                }
+            }
         }
     }
+
+    [HarmonyPatch(typeof(TechData.SerializedSnapshotData), "CreateTechData")]
+    internal static class ObserveBlockSpecs
+    {
+        internal static void Postfix(ref TechData __result)
+        {
+            if (SnapshotLoaderMod.logger.minLoggingLevel == 0 && __result != null && __result.m_BlockSpecs != null)
+            {
+                SnapshotLoaderMod.logger.Trace($"Patched loading of techData: {__result.Name}");
+                for (int i = 0; i < __result.m_BlockSpecs.Count; i++)
+                {
+                    TankPreset.BlockSpec blockSpec = __result.m_BlockSpecs[i];
+                    SnapshotLoaderMod.logger.Trace($"  Found block with ID: {blockSpec.m_BlockType}");
+                    if (blockSpec.m_BlockType != blockSpec.GetBlockType())
+                    {
+                        SnapshotLoaderMod.logger.Warn($"  Inconsistent IDs! recorded: {blockSpec.m_BlockType}, adjusted: {blockSpec.GetBlockType()}");
+                        // blockSpec.m_BlockType = blockSpec.GetBlockType();
+                    }
+                    if (Singleton.Manager<ManSpawn>.inst.GetBlockPrefab(blockSpec.m_BlockType) == null)
+                    {
+                        SnapshotLoaderMod.logger.Error($"  FAILED TO FIND PREFAB FOR BLOCK {blockSpec.block} ({blockSpec.GetBlockType()})!");
+                    }
+                    SnapshotLoaderMod.logger.Trace($"    position: {blockSpec.position}");
+                    SnapshotLoaderMod.logger.Trace($"    orthoRotation: {blockSpec.orthoRotation}");
+                    SnapshotLoaderMod.logger.Trace($"    block: {blockSpec.block}");
+                    SnapshotLoaderMod.logger.Trace($"    m_VisibleID: {blockSpec.m_VisibleID}");
+                    SnapshotLoaderMod.logger.Trace($"    m_SkinID: {blockSpec.m_SkinID}");
+                    SnapshotLoaderMod.logger.Trace($"    m_textSerialData:");
+                    if (blockSpec.textSerialData == null) {
+                        foreach (string data in blockSpec.textSerialData)
+                        {
+                            SnapshotLoaderMod.logger.Trace($"      {data}");
+                        }
+                    }
+                    else
+                    {
+                        SnapshotLoaderMod.logger.Trace($"      <null>");
+                    }
+                    // __result.m_BlockSpecs[i] = blockSpec;
+                }
+            }
+        }
+    }
+
+    /* Should not be needed, since we're now only using official IDs
+    [HarmonyPatch(typeof(ManMods), "IsModdedBlock")]
+    internal static class PatchLegacyIDCompatibility
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BlockTypes type, ref bool __result)
+        {
+            if (!__result)
+            {
+                int blockID = (int)type;
+                // we know is in Vanilla range, continue
+                if (blockID < PatchSnapshotLoadCompatibility.VanillaIDs)
+                {
+                    return;
+                }
+
+                bool isLegacy = PatchSnapshotLoadCompatibility.IsLegacy(blockID);
+                if (isLegacy)
+                {
+                    if (PatchSnapshotLoadCompatibility.LegacyLookupIDCache.TryGetValue(blockID, out int sessionID))
+                    {
+                        __result = sessionID < PatchSnapshotLoadCompatibility.InvalidID;
+                        return;
+                    }
+                    else if (PatchSnapshotLoadCompatibility.GetSessionIDForLegacyBlock(blockID, out sessionID))
+                    {
+                        __result = true;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    */
 
     [HarmonyPatch(typeof(TechData.SerializedSnapshotData), MethodType.Constructor, new Type[] { typeof(TechData) })]
     public static class PatchSnapshotSaveCompatibility
@@ -465,8 +657,9 @@ namespace LegacySnapshotLoader
             IntVector3 boundsDoubleExtents = (IntVector3) m_BoundsDoubleExtents.GetValue(techData);
             m_BoundsDoubleExtents.SetValue(replacement, boundsDoubleExtents);
 
-            bool[] killSwitchStates = techData.GetKillswitchStates();
-            replacement.SetKillswitchStates(killSwitchStates);
+            // Killswitch states moved to block serial data
+            // bool[] killSwitchStates = techData.GetKillswitchStates();
+            // replacement.SetKillswitchStates(killSwitchStates);
 
             List<ControlScheme> controlSchemes = techData.GetControlSchemes();
             replacement.SetControlSchemesFromSnapshot(controlSchemes);

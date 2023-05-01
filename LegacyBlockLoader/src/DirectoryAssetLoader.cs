@@ -207,7 +207,9 @@ namespace LegacyBlockLoader
             BlockLoaderMod.logger.Debug($"Dictionary handled");
 
             TankBlock updatedPrefab = Singleton.Manager<ManSpawn>.inst.GetBlockPrefab((BlockTypes) blockSessionID);
-            if (updatedPrefab == newBlock && Singleton.Manager<ManSpawn>.inst.IsValidBlockToSpawn((BlockTypes) blockSessionID))
+
+            // Had to change from IsValidBlockToSpawn to IsBlockAllowedInLaunchedConfig
+            if (updatedPrefab == newBlock && Singleton.Manager<ManSpawn>.inst.IsBlockAllowedInLaunchedConfig((BlockTypes) blockSessionID))
             {
                 BlockLoaderMod.logger.Info($"{blockSessionID} Prefabs rewired");
             }

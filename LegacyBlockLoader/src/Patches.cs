@@ -93,8 +93,18 @@ namespace LegacyBlockLoader
             }
         }
 
-        [HarmonyPatch(typeof(ManSpawn), "IsBlockAvailableOnPlatform")]
-        private static class TableFix
+        /* Remove these global BlockInjector patches, as we're now using only Official IDs
+        [HarmonyPatch(typeof(ManSpawn), "IsBlockAllowedInCurrentGameMode")]
+        private static class TableFix1
+        {
+            private static void Postfix(ref bool __result, BlockTypes blockType)
+            {
+                if (!__result && !Enum.IsDefined(typeof(BlockTypes), blockType)) __result = true;
+            }
+        }
+
+        [HarmonyPatch(typeof(ManSpawn), "IsBlockAllowedInLaunchedConfig")]
+        private static class TableFix2
         {
             private static void Postfix(ref bool __result, BlockTypes blockType)
             {
@@ -110,6 +120,7 @@ namespace LegacyBlockLoader
                 if (!__result && !Enum.IsDefined(typeof(BlockTypes), blockType)) __result = true;
             }
         }
+        */
 
         [HarmonyPatch(typeof(StringLookup), "GetString")]
         private static class OnStringLookup

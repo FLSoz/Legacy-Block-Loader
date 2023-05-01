@@ -28,7 +28,7 @@ namespace LegacySnapshotLoader
             logger = new Logger("SnapshotLoaderMod", config, 4);
         }
 
-        internal static bool HasBlockInjector = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("ModManager")).Count() > 0;
+        internal static bool HasBlockInjector = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).Where(name => name.Contains("BlockInjector")).Count() > 0;
         internal static bool inited = false;
         internal const string HarmonyID = "com.flsoz.ttmodding.legacysnapshotloader";
         private Harmony harmony = new Harmony(HarmonyID);
@@ -63,9 +63,7 @@ namespace LegacySnapshotLoader
 
         public override void DeInit()
         {
-            PatchSnapshotLoadCompatibility.LegacyLookupIDCache.Clear();
-            PatchSnapshotLoadCompatibility.SessionIDCache.Clear();
-            PatchSnapshotLoadCompatibility.InvalidID = 0;
+            PatchSnapshotLoadCompatibility.PurgeMetadata();
             harmony.UnpatchAll(HarmonyID);
         }
 
